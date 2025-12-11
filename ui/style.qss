@@ -1,0 +1,446 @@
+QMainWindow {
+    background: #f3f4f6;
+}
+
+QWidget {
+    background: #f3f4f6;
+    font-family: Arial;
+    font-size: 14px;
+    color: #111827;
+}
+
+/* Titres / labels importants */
+QLabel[heading="true"] {
+    font-size: 16px;
+    font-weight: bold;
+    color: #0f172a;
+}
+
+QLabel {
+    font-size: 14px;
+    color: #111827;
+}
+
+/* GroupBox (si tu en utilises plus tard) */
+QGroupBox {
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    margin-top: 10px;
+    padding: 8px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 5px;
+    color: #2563eb;
+    font-weight: bold;
+}
+
+/* Champs de saisie */
+
+QLineEdit {
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 6px;
+}
+
+QTextEdit {
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 6px;
+}
+
+QPlainTextEdit {
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 6px;
+}
+
+QLineEdit:focus {
+    border: 1px solid #2563eb;
+}
+
+QTextEdit:focus {
+    border: 1px solid #2563eb;
+}
+
+QPlainTextEdit:focus {
+    border: 1px solid #2563eb;
+}
+
+/* ComboBox (au cas où) */
+
+QComboBox {
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 4px 6px;
+}
+
+QComboBox:focus {
+    border: 1px solid #2563eb;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+
+QComboBox::down-arrow {
+    image: none;
+}
+
+/* Listes (offres / candidatures) */
+
+QListWidget {
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    padding: 4px;
+}
+
+QListWidget::item {
+    padding: 8px 10px;
+    border-radius: 6px;
+}
+
+QListWidget::item:selected {
+    background: #2563eb;
+    color: #ffffff;
+}
+
+QListWidget::item:hover {
+    background: #e0ecff;
+}
+
+/* Boutons principaux */
+
+QPushButton {
+    background: #2563eb;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-weight: 500;
+}
+
+QPushButton:hover {
+    background: #1d4ed8;
+}
+
+QPushButton:pressed {
+    background: #1e40af;
+}
+
+/* Bouton succès (#ok) */
+
+QPushButton#ok {
+    background: #16a34a;
+}
+
+QPushButton#ok:hover {
+    background: #15803d;
+}
+
+/* Bouton danger (#danger) */
+
+QPushButton#danger {
+    background: #e11d48;
+}
+
+QPushButton#danger:hover {
+    background: #be123c;
+}
+
+/* Boutons plats secondaires (si tu en crées plus tard) */
+
+QPushButton[flat="true"] {
+    background: transparent;
+    color: #2563eb;
+    border-radius: 4px;
+    padding: 4px 8px;
+}
+
+QPushButton[flat="true"]:hover {
+    background: #e0ecff;
+}
+
+/* Scrollbars verticales */
+
+QScrollBar:vertical {
+    background: transparent;
+    width: 11px;
+    margin: 4px 0;
+}
+
+QScrollBar::handle:vertical {
+    background: #cbd5f5;
+    border-radius: 6px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #a5b4fc;
+}
+
+QScrollBar::add-line:vertical {
+    height: 0;
+}
+
+QScrollBar::sub-line:vertical {
+    height: 0;
+}
+
+/* Dialogs (fenêtres profil, nouvelle offre, etc.) */
+
+QDialog {
+    background: #ffffff;
+    border-radius: 12px;
+}
+
+/* Les boutons dans les dialogs un peu plus larges */
+QDialog QPushButton {
+    min-width: 100px;
+}
+
+/* Toolbar en haut */
+
+QToolBar {
+    background: #ffffff;
+    border-bottom: 1px solid #d1d5db;
+    padding: 4px;
+}
+
+QToolBar#MainToolbar {
+    background: #ffffff;
+    border-bottom: 1px solid #d1d5db;
+    padding: 6px 8px;
+    spacing: 6px;
+}
+
+QToolButton {
+    padding: 6px 10px;
+    border-radius: 6px;
+}
+
+QToolButton[toolbarAction="true"] {
+    background: transparent;
+    padding: 6px 10px;
+    border-radius: 6px;
+    color: #111827;
+}
+
+QToolButton[toolbarAction="true"]:hover {
+    background: #e5e7eb;
+}
+
+QToolButton[toolbarAction="true"]:pressed {
+    background: #d1d5db;
+}
+
+QToolButton:hover {
+    background: #e0ecff;
+}
+
+QToolButton:pressed {
+    background: #bfdbfe;
+}
+
+/* Splitter entre liste d'offres et panneau droit */
+
+QSplitter::handle {
+    background: #e5e7eb;
+    width: 6px;
+}
+
+/* StatusBar (si tu en ajoutes une plus tard) */
+
+QStatusBar {
+    background: #ffffff;
+    border-top: 1px solid #d1d5db;
+}
+
+/* Boutons stylés : Primary, Secondary, Danger */
+
+QPushButton#PrimaryButton {
+    background: #2563eb;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-weight: 500;
+}
+
+QPushButton#PrimaryButton:hover {
+    background: #1d4ed8;
+}
+
+QPushButton#PrimaryButton:pressed {
+    background: #1e40af;
+}
+
+QPushButton#PrimaryButton:disabled {
+    background: #93c5fd;
+    color: #e5e7eb;
+}
+
+QPushButton#SecondaryButton {
+    background: #e5e7eb;
+    color: #111827;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-weight: 500;
+}
+
+QPushButton#SecondaryButton:hover {
+    background: #d1d5db;
+}
+
+QPushButton#SecondaryButton:pressed {
+    background: #cbd5e1;
+}
+
+QPushButton#SecondaryButton:disabled {
+    background: #e5e7eb;
+    color: #9ca3af;
+}
+
+QPushButton#DangerButton {
+    background: #e11d48;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-weight: 500;
+}
+
+QPushButton#DangerButton:hover {
+    background: #be123c;
+}
+
+QPushButton#DangerButton:pressed {
+    background: #9f1239;
+}
+
+QPushButton#DangerButton:disabled {
+    background: #fecdd3;
+    color: #ffffff;
+}
+
+/* Table des candidatures */
+
+QTableWidget#CandidaturesTable {
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+}
+
+QHeaderView::section {
+    background: #f9fafb;
+    color: #111827;
+    padding: 6px;
+    border: 1px solid #e5e7eb;
+    font-weight: 600;
+}
+
+QTableWidget#CandidaturesTable::item {
+    padding: 6px;
+}
+
+QTableWidget#CandidaturesTable::item:hover {
+    background: #e5e7eb;
+}
+
+QTableWidget#CandidaturesTable::item:selected {
+    background: #2563eb;
+    color: #ffffff;
+}
+
+/* Tables du dashboard et des statistiques */
+
+QTableWidget#DashboardRecentTable,
+QTableWidget#StatsByStatusTable,
+QTableWidget#StatsByCompanyTable,
+QTableWidget#StatsByMonthTable {
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+}
+
+QTableWidget#DashboardRecentTable::item,
+QTableWidget#StatsByStatusTable::item,
+QTableWidget#StatsByCompanyTable::item,
+QTableWidget#StatsByMonthTable::item {
+    padding: 6px;
+}
+
+QTableWidget#DashboardRecentTable::item:hover,
+QTableWidget#StatsByStatusTable::item:hover,
+QTableWidget#StatsByCompanyTable::item:hover,
+QTableWidget#StatsByMonthTable::item:hover {
+    background: #e5e7eb;
+}
+
+QTableWidget#DashboardRecentTable::item:selected,
+QTableWidget#StatsByStatusTable::item:selected,
+QTableWidget#StatsByCompanyTable::item:selected,
+QTableWidget#StatsByMonthTable::item:selected {
+    background: #2563eb;
+    color: #ffffff;
+}
+
+/* Cards */
+
+QFrame#Card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 12px;
+}
+
+/* Sidebar */
+QFrame#Sidebar {
+    background: #0f172a;
+    border-right: 1px solid #1f2937;
+}
+
+QLabel#SidebarTitle {
+    color: #e5e7eb;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+QPushButton#SidebarButton {
+    background: transparent;
+    color: #e5e7eb;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 10px;
+    text-align: left;
+}
+
+QPushButton#SidebarButton:hover {
+    background: #1f2937;
+}
+
+QPushButton#SidebarButton:pressed {
+    background: #111827;
+}
+
+QPushButton#SidebarButton:focus {
+    border: 1px solid #2563eb;
+}
+
+/* Message de statut dans la page Paramètres */
+QLabel#SettingsStatusLabel {
+    background: #d1fae5;        /* vert très clair */
+    color: #065f46;             /* vert foncé lisible */
+    border: 1px solid #34d399;  /* bordure vert menthe */
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-weight: 500;
+}
