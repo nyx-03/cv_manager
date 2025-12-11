@@ -4,7 +4,7 @@
 ![PySide6](https://img.shields.io/badge/PySide6-Qt%20GUI-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Status](https://img.shields.io/badge/Status-Active-success)
-![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
+![Platform](https://img.shields.io/badge/Platform-macOS-blue)
 
 ### Application locale pour gérer vos candidatures, CV et lettres de motivation
 
@@ -121,9 +121,11 @@ cv_manager/
 * [ ] Mode sombre
 * [ ] Recherche avancée dans les offres
 * [ ] Intégration IA (résumé d’offres, génération personnalisée de lettres)
+* [ ] Version Windows
+* [ ] Version Linux
 
 ---
 
 ## 👨‍💻 Auteur
 
-Projet développé par **Ludo**. Contributions bienvenues !
+Projet développé par **PyTechSolutions**. Contributions bienvenues !
