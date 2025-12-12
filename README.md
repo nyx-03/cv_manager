@@ -6,9 +6,9 @@
 ![Status](https://img.shields.io/badge/Status-Active-success)
 ![Platform](https://img.shields.io/badge/Platform-macOS-blue)
 
-### Application locale pour gérer vos candidatures, CV et lettres de motivation
+### Application desktop pour gérer vos candidatures, CV et lettres de motivation
 
-CV Manager est une application de bureau développée en **Python + PySide6** permettant de centraliser et d’organiser efficacement vos démarches de recherche d’emploi. Elle offre une interface moderne et intuitive pour gérer vos offres, candidatures, profil personnel, modèles HTML, ainsi que des tableaux de bord et statistiques.
+CV Manager est une application de bureau développée en **Python + PySide6**, avec une architecture modulaire (services / vues) permettant de centraliser et d’organiser efficacement vos démarches de recherche d’emploi. Elle offre une interface moderne et intuitive pour gérer vos offres, candidatures, profil personnel, modèles HTML, ainsi que des tableaux de bord et statistiques.
 
 ---
 
@@ -58,6 +58,8 @@ CV Manager est une application de bureau développée en **Python + PySide6** pe
 * **SQLAlchemy**
 * **HTML / CSS**
 * **GitHub** pour la gestion de version
+* **Qt Style Sheets (QSS)**
+* **Architecture MVC / Services**
 
 ---
 
@@ -97,15 +99,24 @@ python main.py
 ```
 cv_manager/
  ├── ui/
+ │   ├── application_view.py
  │   ├── main_window.py
- │   ├── settings_widget.py
+ │   ├── sidebar.py
+ │   ├── offer_list_widget.py
  │   ├── dashboard_widget.py
  │   ├── stats_widget.py
- │   ├── candidatures_window.py
- │   └── offer_form_dialog.py
+ │   ├── settings_widget.py
+ │   └── pages/
+ │       ├── offers_page.py
+ │       └── offer_detail_page.py
+ │
+ ├── services/
+ │   ├── offers_service.py
+ │   ├── candidatures_service.py
+ │   ├── letters_service.py
+ │   └── profile_service.py
  │
  ├── models.py
- ├── services/
  ├── templates/
  ├── style.qss
  ├── main.py
@@ -116,11 +127,14 @@ cv_manager/
 
 ## 📝 Feuille de route (Roadmap)
 
-* [ ] Export PDF des lettres
-* [ ] Système de modèles multiples
+* [ ] Paramètres avancés (chemins, modèles, préférences)
+* [ ] Recherche, filtres et tri des offres
+* [ ] Pipeline complet de statuts de candidatures
+* [ ] Historique et versionning des lettres
+* [ ] Export PDF et ZIP des candidatures
+* [ ] Import d'annonces par URL
 * [ ] Mode sombre
-* [ ] Recherche avancée dans les offres
-* [ ] Intégration IA (résumé d’offres, génération personnalisée de lettres)
+* [ ] Packaging macOS (PyInstaller)
 * [ ] Version Windows
 * [ ] Version Linux
 
@@ -128,4 +142,4 @@ cv_manager/
 
 ## 👨‍💻 Auteur
 
-Projet développé par **PyTechSolutions**. Contributions bienvenues !
+Projet développé par **PyTechSolutions**. Contributions et retours bienvenus.
