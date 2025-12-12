@@ -8,37 +8,21 @@ from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QMainWindow,
-    QWidget,
-    QVBoxLayout,
     QMessageBox,
     QDialog,
-    QLabel,
-    QPushButton,
-    QHBoxLayout,
-    QFrame,
-    QStackedWidget,
 )
 
 from db import SessionLocal
 
-from ui.offer_form_dialog import OfferFormDialog
-from ui.dashboard_widget import DashboardWidget
-from ui.stats_widget import StatsWidget
-from ui.settings_widget import SettingsWidget
-from ui.sidebar import Sidebar
-from ui.pages.offers_page import OffersPage
-from ui.pages.offer_detail_page import OfferDetailPage, LetterViewModel
+from ui.application_view import (
+    ApplicationView,
+    PAGE_DASHBOARD,
+    PAGE_OFFERS,
+    PAGE_STATS,
+    PAGE_SETTINGS,
+    PAGE_OFFER_DETAIL,
+)
 
-from models import Offre, Candidature, CandidatureStatut
-
-# --- Page indices (QStackedWidget) ---
-PAGE_DASHBOARD = 0
-PAGE_OFFERS = 1
-PAGE_STATS = 2
-PAGE_SETTINGS = 3
-PAGE_OFFER_DETAIL = 4
-
-# --- Services ---
 from services.offers_service import list_offers, create_offer, OfferCreateData
 from services.candidatures_service import (
     list_for_offer,
@@ -51,6 +35,8 @@ from services.candidatures_service import (
 )
 from services.profile_service import ensure_profile
 from services.letters_service import generate_letter_html
+
+from models import Offre, Candidature, CandidatureStatut
 
 
 class MainWindow(QMainWindow):
@@ -66,142 +52,34 @@ class MainWindow(QMainWindow):
         self._load_offers()
 
     def _setup_ui(self):
-        # 1) Création
-        self._create_widgets()
-        # 2) Configuration
-        self._configure_widgets()
-        # 3) Layouts
-        self._create_layouts()
-        # 4) Assemblage
-        self._add_widgets_to_layouts()
-        # 5) Connexions
-        self._create_connections()
+        self.view = ApplicationView(self.session, parent=self)
+        self.setCentralWidget(self.view)
 
+        # Provide status resolver for offer cards (colors)
+        self.view.set_offers_status_resolver(self._resolve_offer_status)
 
-    # ------------------------------------------------------------------
-    # UI building blocks
-    # ------------------------------------------------------------------
+        # Wire view -> controller
+        self.view.offerClicked.connect(self.open_offer_detail)
+        self.view.backToOffersRequested.connect(lambda: self.view.set_page(PAGE_OFFERS))
+        self.view.openLetterRequested.connect(self.on_open_letter_by_id)
+        self.view.markSentRequested.connect(self.on_mark_sent_by_id)
+        self.view.deleteRequested.connect(self.on_delete_candidature_by_id)
 
-    def _create_widgets(self):
-        # Root
-        self.root = QWidget(self)
-        self.setCentralWidget(self.root)
-
-        # Sidebar
-        self.sidebar = Sidebar(self.root)
-
-        # Main container
-        self.main_container = QWidget(self.root)
-
-        # State
-        self.current_offer = None
-
-        # Pages
-        self.offers_page = OffersPage(
-            parent=self,
-            title="Annonces",
-            columns=3,
-            status_resolver=self._resolve_offer_status,
-        )
-        self.offer_detail_page = OfferDetailPage(self)
-
-        self.dashboard = DashboardWidget(self.session, self)
-        self.stats = StatsWidget(self.session, self)
-        self.settings = SettingsWidget(self.session, self)
-
-        # Stack (pages)
-        self.stack = QStackedWidget(self.main_container)
-        self.stack.addWidget(self.dashboard)         # PAGE_DASHBOARD
-        self.stack.addWidget(self.offers_page)       # PAGE_OFFERS
-        self.stack.addWidget(self.stats)             # PAGE_STATS
-        self.stack.addWidget(self.settings)          # PAGE_SETTINGS
-        self.stack.addWidget(self.offer_detail_page) # PAGE_OFFER_DETAIL
-
-    def _configure_widgets(self):
-        # Root layout margins handled in _create_layouts
-        self.stack.setCurrentIndex(PAGE_OFFERS)
-
-    def _create_layouts(self):
-        # Root layout
-        self.root_layout = QHBoxLayout(self.root)
-        self.root_layout.setContentsMargins(0, 0, 0, 0)
-        self.root_layout.setSpacing(0)
-
-        # Main layout
-        self.main_layout = QVBoxLayout(self.main_container)
-        self.main_layout.setContentsMargins(12, 12, 12, 12)
-        self.main_layout.setSpacing(8)
-
-    def _add_widgets_to_layouts(self):
-        # Main
-        self.main_layout.addWidget(self.stack)
-
-        # Root
-        self.root_layout.addWidget(self.sidebar)
-        self.root_layout.addWidget(self.main_container)
-
-    def _create_connections(self):
-        # Offers page
-        self.offers_page.offerClicked.connect(self.open_offer_detail)
-
-        # Offer detail page
-        self.offer_detail_page.backRequested.connect(lambda: self.stack.setCurrentIndex(PAGE_OFFERS))
-        self.offer_detail_page.openLetterRequested.connect(self.on_open_letter_by_id)
-        self.offer_detail_page.markSentRequested.connect(self.on_mark_sent_by_id)
-        self.offer_detail_page.deleteRequested.connect(self.on_delete_candidature_by_id)
-
-        # Sidebar
-        self.sidebar.navigateRequested.connect(self._handle_sidebar_nav)
-        self.sidebar.actionRequested.connect(self._handle_sidebar_action)
-
-        # Sync active page highlight
-        self.stack.currentChanged.connect(self._sync_active_page)
-        self._sync_active_page(PAGE_OFFERS)
-
-    # ------------------------------------------------------------------
-    # UI event helpers
-    # ------------------------------------------------------------------
-
-    def _handle_sidebar_nav(self, page_name: str):
-        if page_name == self.sidebar.pages.DASHBOARD:
-            self.stack.setCurrentIndex(PAGE_DASHBOARD)
-        elif page_name == self.sidebar.pages.OFFERS:
-            self.stack.setCurrentIndex(PAGE_OFFERS)
-        elif page_name == self.sidebar.pages.STATS:
-            self.stack.setCurrentIndex(PAGE_STATS)
-        elif page_name == self.sidebar.pages.SETTINGS:
-            self.stack.setCurrentIndex(PAGE_SETTINGS)
-
-    def _handle_sidebar_action(self, action_name: str):
-        if action_name == self.sidebar.actions.NEW_OFFER:
-            self.on_new_offer()
-        elif action_name == self.sidebar.actions.PREPARE_LETTER:
-            self.on_prepare_letter()
-        elif action_name == self.sidebar.actions.SHOW_CANDIDATURES:
-            self.on_show_candidatures()
-        elif action_name == self.sidebar.actions.REFRESH:
-            self._refresh_current_page()
+        self.view.newOfferRequested.connect(self.on_new_offer)
+        self.view.prepareLetterRequested.connect(self.on_prepare_letter)
+        self.view.showCandidaturesRequested.connect(self.on_show_candidatures)
+        self.view.refreshRequested.connect(self._refresh_current_page)
 
     def _refresh_current_page(self):
-        idx = self.stack.currentIndex() if getattr(self, "stack", None) else -1
+        idx = self.view.current_page() if hasattr(self, "view") else -1
         if idx == PAGE_DASHBOARD:
-            self.dashboard.refresh()
+            self.view.refresh_dashboard()
         elif idx == PAGE_STATS:
-            self.stats.refresh()
+            self.view.refresh_stats()
         elif idx == PAGE_OFFER_DETAIL and self.current_offer:
             self.open_offer_detail(self.current_offer)
         else:
             self._load_offers()
-
-    def _sync_active_page(self, index: int):
-        if index == PAGE_DASHBOARD:
-            self.sidebar.set_active_page(self.sidebar.pages.DASHBOARD)
-        elif index == PAGE_OFFERS:
-            self.sidebar.set_active_page(self.sidebar.pages.OFFERS)
-        elif index == PAGE_STATS:
-            self.sidebar.set_active_page(self.sidebar.pages.STATS)
-        elif index == PAGE_SETTINGS:
-            self.sidebar.set_active_page(self.sidebar.pages.SETTINGS)
 
     def _resolve_offer_status(self, offre: Offre) -> str:
         """Retourne un statut pour l'offre (utilisé pour colorer les cartes via QSS).
@@ -218,8 +96,10 @@ class MainWindow(QMainWindow):
 
 
     def open_offer_detail(self, offre: Offre):
+        from ui.pages.offer_detail_page import LetterViewModel
+
         self.current_offer = offre
-        self.offer_detail_page.set_offer(offre)
+        self.view.show_offer_detail(offre)
 
         candidatures = list_for_offer(self.session, offre.id, desc=True)
 
@@ -237,8 +117,8 @@ class MainWindow(QMainWindow):
                 )
             )
 
-        self.offer_detail_page.set_letters(vms)
-        self.stack.setCurrentIndex(PAGE_OFFER_DETAIL)
+        self.view.set_offer_detail_letters(vms)
+        self.view.set_page(PAGE_OFFER_DETAIL)
 
     def on_open_letter_by_id(self, cand_id: int):
         cand = get_candidature(self.session, cand_id)
@@ -303,7 +183,7 @@ class MainWindow(QMainWindow):
 
     def _load_offers(self):
         offers = list_offers(self.session, desc=True)
-        self.offers_page.set_offers(offers)
+        self.view.set_offers(offers)
 
     def on_new_offer(self):
         dialog = OfferFormDialog(self)
