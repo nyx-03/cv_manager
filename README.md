@@ -157,16 +157,65 @@ cv_manager/
 
 ## 📝 Feuille de route (Roadmap)
 
-* [ ] Paramètres avancés (chemins, modèles, préférences)
-* [ ] Recherche, filtres et tri des offres
-* [ ] Pipeline complet de statuts de candidatures
-* [ ] Historique et versionning des lettres
-* [ ] Export PDF et ZIP des candidatures
-* [ ] Import d'annonces par URL
+La roadmap ci-dessous présente les évolutions envisagées pour CV Manager, par ordre de priorité fonctionnelle et produit.
+
+---
+
+### 🚀 Priorité 1 — Productivité & valeur utilisateur
+
+* [ ] Éditeur de lettres de motivation avant génération (par paragraphe)
+* [ ] Sauvegarde des contenus personnalisés par offre
+* [ ] Historique et versionning des lettres de motivation
+* [ ] Recherche globale dans les offres et candidatures
+* [ ] Filtres avancés (statut, entreprise, date, source)
+
+---
+
+### 🎯 Priorité 2 — Import & automatisation
+
+* [ ] Import d’annonces par URL (Jobup, LinkedIn, Indeed…)
+* [ ] Détection automatique du type de page (listing vs annonce)
+* [ ] Extraction structurée : poste, entreprise, lieu, contrat, description
+* [ ] Mapping par site (providers d’import)
+* [ ] Sauvegarde de l’annonce originale (HTML / TXT)
+
+---
+
+### 🎨 Priorité 3 — UX & interface
+
+* [ ] Amélioration des cartes (offres / lettres)
+* [ ] Timeline visuelle des candidatures
+* [ ] Notifications internes (succès, erreurs, actions)
+* [ ] Raccourcis clavier
 * [ ] Mode sombre
+
+---
+
+### 📄 Priorité 4 — Export & livrables
+
+* [ ] Export PDF des lettres de motivation
+* [ ] Choix du template lors de l’export
+* [ ] Génération d’un dossier de candidature complet (ZIP)
+* [ ] Nommage automatique des fichiers
+
+---
+
+### 🧱 Priorité 5 — Robustesse & configuration
+
+* [ ] Paramètres avancés (chemins, modèles par défaut)
+* [ ] Sauvegarde / restauration de la base de données
+* [ ] Validation des données utilisateur
+* [ ] Gestion des erreurs centralisée
+
+---
+
+### 📦 Priorité 6 — Distribution & plateformes
+
 * [ ] Packaging macOS (PyInstaller)
+* [ ] Icône et identité visuelle de l’application
 * [ ] Version Windows
 * [ ] Version Linux
+* [ ] Mise à jour automatique (long terme)
 
 ---
 
