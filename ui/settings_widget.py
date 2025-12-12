@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QTextEdit
-from models import ProfilCandidat
+from services.profile_service import ensure_profile, update_profile, ProfileUpdateData
 
 
 class SettingsWidget(QWidget):
@@ -239,27 +239,27 @@ class SettingsWidget(QWidget):
         if directory:
             self.input_templates_dir.setText(directory)
 
-    def _get_or_create_profile(self):
-        profil = self.session.query(ProfilCandidat).first()
-        if not profil:
-            profil = ProfilCandidat()
-            self.session.add(profil)
-            self.session.commit()
-        return profil
+    def _require_session(self) -> bool:
+        if self.session is None:
+            self._show_status_message("Erreur : aucune session DB disponible.")
+            return False
+        return True
 
     def load_settings(self):
-        profil = self._get_or_create_profile()
+        if not self._require_session():
+            return
+        profil = ensure_profile(self.session)
 
-        self.input_name.setText(profil.nom or "")
-        self.input_firstname.setText(profil.prenom or "")
-        self.input_email.setText(profil.email or "")
-        self.input_phone.setText(profil.telephone or "")
-        self.input_city.setText(profil.ville or "")
-        self.input_target_title.setText(profil.titre or "")
-        self.input_resume.setText(profil.resume or "")
-        self.input_linkedin.setText(profil.linkedin or "")
-        self.input_github.setText(profil.github or "")
-        self.input_portfolio.setText(profil.portfolio or "")
+        self.input_name.setText(getattr(profil, "nom", "") or "")
+        self.input_firstname.setText(getattr(profil, "prenom", "") or "")
+        self.input_email.setText(getattr(profil, "email", "") or "")
+        self.input_phone.setText(getattr(profil, "telephone", "") or "")
+        self.input_city.setText(getattr(profil, "ville", "") or "")
+        self.input_target_title.setText(getattr(profil, "titre", "") or "")
+        self.input_resume.setText(getattr(profil, "resume", "") or "")
+        self.input_linkedin.setText(getattr(profil, "linkedin", "") or "")
+        self.input_github.setText(getattr(profil, "github", "") or "")
+        self.input_portfolio.setText(getattr(profil, "portfolio", "") or "")
 
         # Defaults for non-profile settings
         self.input_letters_dir.setText("")
@@ -268,20 +268,29 @@ class SettingsWidget(QWidget):
         self.spin_recent_count.setValue(10)
 
     def save_settings(self):
-        profil = self._get_or_create_profile()
+        if not self._require_session():
+            return
 
-        profil.nom = self.input_name.text().strip()
-        profil.prenom = self.input_firstname.text().strip()
-        profil.email = self.input_email.text().strip()
-        profil.telephone = self.input_phone.text().strip()
-        profil.ville = self.input_city.text().strip()
-        profil.titre = self.input_target_title.text().strip()
-        profil.resume = self.input_resume.toPlainText().strip()
-        profil.linkedin = self.input_linkedin.text().strip()
-        profil.github = self.input_github.text().strip()
-        profil.portfolio = self.input_portfolio.text().strip()
+        profil = update_profile(
+            self.session,
+            ProfileUpdateData(
+                nom=self.input_name.text().strip(),
+                prenom=self.input_firstname.text().strip(),
+                email=self.input_email.text().strip(),
+                telephone=self.input_phone.text().strip(),
+                ville=self.input_city.text().strip(),
+                titre=self.input_target_title.text().strip(),
+                linkedin=self.input_linkedin.text().strip(),
+                github=self.input_github.text().strip(),
+                portfolio=self.input_portfolio.text().strip(),
+            ),
+        )
 
-        self.session.commit()
+        # Champ optionnel (peut ne pas exister dans le modèle)
+        if hasattr(profil, "resume"):
+            profil.resume = self.input_resume.toPlainText().strip()
+            self.session.commit()
+
         self._show_status_message("Paramètres enregistrés.")
 
     def reset_settings(self):

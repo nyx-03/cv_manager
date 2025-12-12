@@ -1,33 +1,45 @@
- # ui/main_window.py
+# ui/main_window.py
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QListWidget, QTextEdit,
-    QSplitter, QToolBar, QMessageBox, QDialog, QLabel, QPushButton, QHBoxLayout, QListWidgetItem, QFrame,
-    QSizePolicy, QScrollArea
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QMessageBox,
+    QDialog,
+    QLabel,
+    QPushButton,
+    QHBoxLayout,
+    QFrame,
+    QStackedWidget,
 )
-from PySide6.QtGui import QAction, QDesktopServices
-from PySide6.QtCore import Qt, QUrl, QSize
-from ui.pages.offer_detail_page import OfferDetailPage, LetterViewModel
+
 from db import SessionLocal
 
-from services.templates_service import render_lettre_candidature_html
 from ui.offer_form_dialog import OfferFormDialog
 from ui.dashboard_widget import DashboardWidget
 from ui.stats_widget import StatsWidget
 from ui.settings_widget import SettingsWidget
+from ui.sidebar import Sidebar
 from ui.pages.offers_page import OffersPage
-from models import Offre, ProfilCandidat, Candidature, CandidatureStatut
-from pathlib import Path
-from datetime import date
+from ui.pages.offer_detail_page import OfferDetailPage, LetterViewModel
 
-# --- Service layer for offers ---
-from services.offers_service import (
-    list_offers,
-    create_offer,
-    get_offer,
-    OfferCreateData,
-)
+from models import Offre, Candidature, CandidatureStatut
 
-# --- Service layer for candidatures ---
+# --- Page indices (QStackedWidget) ---
+PAGE_DASHBOARD = 0
+PAGE_OFFERS = 1
+PAGE_STATS = 2
+PAGE_SETTINGS = 3
+PAGE_OFFER_DETAIL = 4
+
+# --- Services ---
+from services.offers_service import list_offers, create_offer, OfferCreateData
 from services.candidatures_service import (
     list_for_offer,
     get_candidature,
@@ -37,6 +49,8 @@ from services.candidatures_service import (
     validate_letter_path,
     CandidatureCreateData,
 )
+from services.profile_service import ensure_profile
+from services.letters_service import generate_letter_html
 
 
 class MainWindow(QMainWindow):
@@ -52,148 +66,142 @@ class MainWindow(QMainWindow):
         self._load_offers()
 
     def _setup_ui(self):
-
-        # --- Root central widget avec sidebar + contenu principal ---
-        root = QWidget(self)
-        self.setCentralWidget(root)
-
-        root_layout = QHBoxLayout(root)
-        root_layout.setContentsMargins(0, 0, 0, 0)
-        root_layout.setSpacing(0)
-
-        # ----- Sidebar à gauche -----
-        sidebar = QFrame(root)
-        sidebar.setObjectName("Sidebar")
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(12, 12, 12, 12)
-        sidebar_layout.setSpacing(8)
-
-        title_label = QLabel("CV Manager")
-        title_label.setObjectName("SidebarTitle")
-        sidebar_layout.addWidget(title_label)
-        sidebar_layout.addSpacing(12)
-
-        # Actions principales (anciennement toolbar)
-        actions_label = QLabel("Actions")
-        actions_label.setProperty("heading", True)
-        sidebar_layout.addWidget(actions_label)
-
-        btn_new_offer = QPushButton("Nouvelle offre")
-        btn_new_offer.setObjectName("SidebarButton")
-        btn_new_offer.clicked.connect(self.on_new_offer)
-        sidebar_layout.addWidget(btn_new_offer)
-
-        btn_prepare_letter = QPushButton("Préparer lettre")
-        btn_prepare_letter.setObjectName("SidebarButton")
-        btn_prepare_letter.clicked.connect(self.on_prepare_letter)
-        sidebar_layout.addWidget(btn_prepare_letter)
+        # 1) Création
+        self._create_widgets()
+        # 2) Configuration
+        self._configure_widgets()
+        # 3) Layouts
+        self._create_layouts()
+        # 4) Assemblage
+        self._add_widgets_to_layouts()
+        # 5) Connexions
+        self._create_connections()
 
 
-        btn_all_candidatures = QPushButton("Toutes les candidatures")
-        btn_all_candidatures.setObjectName("SidebarButton")
-        btn_all_candidatures.clicked.connect(self.on_show_candidatures)
-        sidebar_layout.addWidget(btn_all_candidatures)
+    # ------------------------------------------------------------------
+    # UI building blocks
+    # ------------------------------------------------------------------
 
-        btn_refresh = QPushButton("Rafraîchir")
-        btn_refresh.setObjectName("SidebarButton")
-        btn_refresh.clicked.connect(
-            lambda: (
-                self.dashboard.refresh()
-                if getattr(self, "stack", None) and self.stack.currentIndex() == 0
-                else self.stats.refresh()
-                if getattr(self, "stack", None) and self.stack.currentIndex() == 2
-                else self.open_offer_detail(self.current_offer)
-                if getattr(self, "stack", None)
-                and self.stack.currentIndex() == getattr(self, "offer_detail_index", -1)
-                and self.current_offer
-                else self._load_offers()
-            )
-        )
-        sidebar_layout.addWidget(btn_refresh)
+    def _create_widgets(self):
+        # Root
+        self.root = QWidget(self)
+        self.setCentralWidget(self.root)
 
-        sidebar_layout.addSpacing(12)
+        # Sidebar
+        self.sidebar = Sidebar(self.root)
 
-        btn_home = QPushButton("Annonces")
-        btn_home.setObjectName("SidebarButton")
-        sidebar_layout.addWidget(btn_home)
+        # Main container
+        self.main_container = QWidget(self.root)
 
-        btn_dashboard = QPushButton("Tableau de bord")
-        btn_dashboard.setObjectName("SidebarButton")
-        sidebar_layout.addWidget(btn_dashboard)
-
-        btn_stats = QPushButton("Statistiques")
-        btn_stats.setObjectName("SidebarButton")
-        sidebar_layout.addWidget(btn_stats)
-
-        # Connexions pour la navigation de la sidebar
-        btn_home.clicked.connect(lambda: self.stack.setCurrentIndex(1))
-        btn_dashboard.clicked.connect(lambda: self.stack.setCurrentIndex(0))
-        btn_stats.clicked.connect(lambda: self.stack.setCurrentIndex(2))
-
-        sidebar_layout.addStretch()
-
-        btn_settings = QPushButton("Paramètres")
-        btn_settings.setObjectName("SidebarButton")
-        sidebar_layout.addWidget(btn_settings)
-        btn_settings.clicked.connect(lambda: self.stack.setCurrentIndex(3))
-
-        # ----- Zone principale à droite -----
-        main_container = QWidget(root)
-        main_layout = QVBoxLayout(main_container)
-        main_layout.setContentsMargins(12, 12, 12, 12)
-        main_layout.setSpacing(8)
-
-        # --- Pages "Annonces" (cards) et "Détail" (page dédiée) ---
+        # State
         self.current_offer = None
 
-        # Page annonces (cards) — widget dédié
+        # Pages
         self.offers_page = OffersPage(
             parent=self,
             title="Annonces",
             columns=3,
             status_resolver=self._resolve_offer_status,
         )
+        self.offer_detail_page = OfferDetailPage(self)
+
+        self.dashboard = DashboardWidget(self.session, self)
+        self.stats = StatsWidget(self.session, self)
+        self.settings = SettingsWidget(self.session, self)
+
+        # Stack (pages)
+        self.stack = QStackedWidget(self.main_container)
+        self.stack.addWidget(self.dashboard)         # PAGE_DASHBOARD
+        self.stack.addWidget(self.offers_page)       # PAGE_OFFERS
+        self.stack.addWidget(self.stats)             # PAGE_STATS
+        self.stack.addWidget(self.settings)          # PAGE_SETTINGS
+        self.stack.addWidget(self.offer_detail_page) # PAGE_OFFER_DETAIL
+
+    def _configure_widgets(self):
+        # Root layout margins handled in _create_layouts
+        self.stack.setCurrentIndex(PAGE_OFFERS)
+
+    def _create_layouts(self):
+        # Root layout
+        self.root_layout = QHBoxLayout(self.root)
+        self.root_layout.setContentsMargins(0, 0, 0, 0)
+        self.root_layout.setSpacing(0)
+
+        # Main layout
+        self.main_layout = QVBoxLayout(self.main_container)
+        self.main_layout.setContentsMargins(12, 12, 12, 12)
+        self.main_layout.setSpacing(8)
+
+    def _add_widgets_to_layouts(self):
+        # Main
+        self.main_layout.addWidget(self.stack)
+
+        # Root
+        self.root_layout.addWidget(self.sidebar)
+        self.root_layout.addWidget(self.main_container)
+
+    def _create_connections(self):
+        # Offers page
         self.offers_page.offerClicked.connect(self.open_offer_detail)
 
-        # Page détail annonce — widget dédié
-        self.offer_detail_page = OfferDetailPage(self)
-        self.offer_detail_page.backRequested.connect(lambda: self.stack.setCurrentIndex(1))
+        # Offer detail page
+        self.offer_detail_page.backRequested.connect(lambda: self.stack.setCurrentIndex(PAGE_OFFERS))
         self.offer_detail_page.openLetterRequested.connect(self.on_open_letter_by_id)
         self.offer_detail_page.markSentRequested.connect(self.on_mark_sent_by_id)
         self.offer_detail_page.deleteRequested.connect(self.on_delete_candidature_by_id)
 
-        # --- Système de pages : Dashboard + Vue principale ---
-        from PySide6.QtWidgets import QStackedWidget
+        # Sidebar
+        self.sidebar.navigateRequested.connect(self._handle_sidebar_nav)
+        self.sidebar.actionRequested.connect(self._handle_sidebar_action)
 
-        self.stack = QStackedWidget(main_container)
-        main_layout.addWidget(self.stack)
+        # Sync active page highlight
+        self.stack.currentChanged.connect(self._sync_active_page)
+        self._sync_active_page(PAGE_OFFERS)
 
-        # Page 0 : Dashboard
-        self.dashboard = DashboardWidget(self.session, self)
-        self.stack.addWidget(self.dashboard)
+    # ------------------------------------------------------------------
+    # UI event helpers
+    # ------------------------------------------------------------------
 
-        # Page 1 : Annonces (cards)
-        self.stack.addWidget(self.offers_page)
+    def _handle_sidebar_nav(self, page_name: str):
+        if page_name == self.sidebar.pages.DASHBOARD:
+            self.stack.setCurrentIndex(PAGE_DASHBOARD)
+        elif page_name == self.sidebar.pages.OFFERS:
+            self.stack.setCurrentIndex(PAGE_OFFERS)
+        elif page_name == self.sidebar.pages.STATS:
+            self.stack.setCurrentIndex(PAGE_STATS)
+        elif page_name == self.sidebar.pages.SETTINGS:
+            self.stack.setCurrentIndex(PAGE_SETTINGS)
 
-        # Page 2 : Statistiques
-        self.stats = StatsWidget(self.session, self)
-        self.stack.addWidget(self.stats)
+    def _handle_sidebar_action(self, action_name: str):
+        if action_name == self.sidebar.actions.NEW_OFFER:
+            self.on_new_offer()
+        elif action_name == self.sidebar.actions.PREPARE_LETTER:
+            self.on_prepare_letter()
+        elif action_name == self.sidebar.actions.SHOW_CANDIDATURES:
+            self.on_show_candidatures()
+        elif action_name == self.sidebar.actions.REFRESH:
+            self._refresh_current_page()
 
-        # Page 3 : Paramètres
-        self.settings = SettingsWidget(self.session, self)
-        self.stack.addWidget(self.settings)
+    def _refresh_current_page(self):
+        idx = self.stack.currentIndex() if getattr(self, "stack", None) else -1
+        if idx == PAGE_DASHBOARD:
+            self.dashboard.refresh()
+        elif idx == PAGE_STATS:
+            self.stats.refresh()
+        elif idx == PAGE_OFFER_DETAIL and self.current_offer:
+            self.open_offer_detail(self.current_offer)
+        else:
+            self._load_offers()
 
-        # Page 4 : Détail annonce (toujours à la fin)
-        self.stack.addWidget(self.offer_detail_page)
-        self.offer_detail_index = self.stack.count() - 1
-
-        # Afficher la vue principale par défaut
-        self.stack.setCurrentIndex(1)
-
-        # Ajout de la sidebar et du contenu principal dans le layout racine
-        root_layout.addWidget(sidebar)
-        root_layout.addWidget(main_container)
-
+    def _sync_active_page(self, index: int):
+        if index == PAGE_DASHBOARD:
+            self.sidebar.set_active_page(self.sidebar.pages.DASHBOARD)
+        elif index == PAGE_OFFERS:
+            self.sidebar.set_active_page(self.sidebar.pages.OFFERS)
+        elif index == PAGE_STATS:
+            self.sidebar.set_active_page(self.sidebar.pages.STATS)
+        elif index == PAGE_SETTINGS:
+            self.sidebar.set_active_page(self.sidebar.pages.SETTINGS)
 
     def _resolve_offer_status(self, offre: Offre) -> str:
         """Retourne un statut pour l'offre (utilisé pour colorer les cartes via QSS).
@@ -208,13 +216,6 @@ class MainWindow(QMainWindow):
         )
         return last.statut.name if last and last.statut else "A_PREPARER"
 
-    def _clear_layout(self, layout):
-        """Supprime tous les widgets d'un layout (utile pour rerender des listes de cards)."""
-        while layout.count():
-            item = layout.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
 
     def open_offer_detail(self, offre: Offre):
         self.current_offer = offre
@@ -237,7 +238,7 @@ class MainWindow(QMainWindow):
             )
 
         self.offer_detail_page.set_letters(vms)
-        self.stack.setCurrentIndex(self.offer_detail_index)
+        self.stack.setCurrentIndex(PAGE_OFFER_DETAIL)
 
     def on_open_letter_by_id(self, cand_id: int):
         cand = get_candidature(self.session, cand_id)
@@ -304,36 +305,6 @@ class MainWindow(QMainWindow):
         offers = list_offers(self.session, desc=True)
         self.offers_page.set_offers(offers)
 
-    def on_offer_selected(self, current, previous):
-        if not hasattr(self, "detail_view") or not hasattr(self, "candidatures_list"):
-            return
-        if not current:
-            self.detail_view.clear()
-            self.candidatures_list.clear()
-            return
-
-        offre_id = current.data(Qt.UserRole)
-        offre = get_offer(self.session, offre_id)
-
-        if not offre:
-            self.detail_view.clear()
-            self.candidatures_list.clear()
-            return
-
-        texte = (
-            f"Titre : {offre.titre_poste}\n"
-            f"Entreprise : {offre.entreprise or ''}\n"
-            f"Source : {offre.source or ''}\n"
-            f"URL : {offre.url or ''}\n"
-            f"Localisation : {offre.localisation or ''}\n"
-            f"Type de contrat : {offre.type_contrat or ''}\n\n"
-            f"Texte de l'annonce :\n{offre.texte_annonce or ''}"
-        )
-        self.detail_view.setPlainText(texte)
-
-        # Charger les candidatures liées
-        self._load_candidatures_for_offer(offre.id)
-
     def on_new_offer(self):
         dialog = OfferFormDialog(self)
         result = dialog.exec()
@@ -363,22 +334,31 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Succès", "Offre enregistrée.")
             self._load_offers()  # rafraîchir la liste
 
-    def _get_or_create_profile(self):
-        """Retourne le ProfilCandidat unique, en le créant si besoin."""
-        profil = self.session.query(ProfilCandidat).first()
-        if profil is None:
-            profil = ProfilCandidat(
-                nom="",
-                prenom="",
-                email="",
-            )
-            self.session.add(profil)
-            self.session.commit()
-        return profil
-
 
     def _get_selected_offer(self) -> Offre | None:
         return self.current_offer
+
+    def _get_letter_template_path(self) -> Path:
+        """Retourne le chemin du template HTML utilisé pour générer les lettres.
+
+        Pour l'instant, on cherche un fichier `developer Python.html` dans quelques emplacements.
+        (On le rendra configurable via Settings ensuite.)
+        """
+        candidates = [
+            Path(__file__).resolve().parent / "templates" / "developer Python.html",
+            Path.cwd() / "templates" / "developer Python.html",
+            Path.cwd() / "developer Python.html",
+        ]
+        for p in candidates:
+            if p.exists():
+                return p
+        raise FileNotFoundError("Template introuvable. Chemins testés :\n- " + "\n- ".join(str(p) for p in candidates))
+
+    def _get_letters_output_dir(self) -> Path:
+        """Dossier de sortie des lettres générées."""
+        out_dir = Path.cwd() / "generated_letters"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        return out_dir
 
     def on_prepare_letter(self):
         offre = self._get_selected_offer()
@@ -386,10 +366,24 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Préparation lettre", "Sélectionne d'abord une offre dans la liste.")
             return
 
-        profil = self._get_or_create_profile()
+        profil = ensure_profile(self.session)
 
         try:
-            output_path = render_lettre_candidature_html(profil, offre)
+            template_path = self._get_letter_template_path()
+            out_dir = self._get_letters_output_dir()
+            hint = f"{getattr(offre, 'entreprise', '')}-{getattr(offre, 'titre_poste', getattr(offre, 'titre', ''))}".strip("-")
+
+            result = generate_letter_html(
+                template_path=template_path,
+                output_dir=out_dir,
+                profil=profil,
+                offre=offre,
+                filename_hint=hint or "lettre",
+            )
+            output_path = result.output_path
+        except FileNotFoundError as e:
+            QMessageBox.critical(self, "Template introuvable", str(e))
+            return
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur lors de la génération de la lettre HTML : {e}")
             return
@@ -414,126 +408,6 @@ class MainWindow(QMainWindow):
         if self.current_offer and self.current_offer.id == offre.id:
             self.open_offer_detail(self.current_offer)
 
-    def _load_candidatures_for_offer(self, offre_id: int):
-        """Charge les candidatures liées à une offre et les affiche dans la liste."""
-        if not hasattr(self, "candidatures_list"):
-            return
-
-        self.candidatures_list.clear()
-
-        candidatures = (
-            self.session.query(Candidature)
-            .filter_by(offre_id=offre_id)
-            .order_by(Candidature.id.desc())
-            .all()
-        )
-
-        for cand in candidatures:
-            date_txt = cand.date_envoi.strftime("%d/%m/%Y") if cand.date_envoi else "Brouillon"
-            statut_txt = cand.statut.name if cand.statut else "INCONNU"
-
-            text = f"{date_txt} – {statut_txt}"
-            item = QListWidgetItem(text)
-            item.setData(Qt.UserRole, cand.id)
-            self.candidatures_list.addItem(item)
-
-    def _get_selected_candidature(self) -> Candidature | None:
-        if not hasattr(self, "candidatures_list"):
-            return None
-        item = self.candidatures_list.currentItem()
-        if not item:
-            return None
-
-        cand_id = item.data(Qt.UserRole)
-        if not cand_id:
-            return None
-
-        return self.session.query(Candidature).filter_by(id=cand_id).first()
-
-    def on_open_letter(self):
-        cand = self._get_selected_candidature()
-        if not cand:
-            QMessageBox.warning(self, "Ouvrir la lettre", "Sélectionne une candidature dans la liste.")
-            return
-
-        if not cand.chemin_lettre:
-            QMessageBox.warning(self, "Ouvrir la lettre", "Cette candidature n'a pas encore de lettre associée.")
-            return
-
-        path = Path(cand.chemin_lettre)
-        if not path.exists():
-            QMessageBox.critical(self, "Erreur", f"Le fichier n'existe pas : {path}")
-            return
-
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
-
-    def on_delete_candidature(self):
-        cand = self._get_selected_candidature()
-        if not cand:
-            QMessageBox.warning(
-                self,
-                "Suppression",
-                "Sélectionne d'abord une candidature dans la liste."
-            )
-            return
-
-        msg = QMessageBox(self)
-        msg.setIcon(QMessageBox.Warning)
-        msg.setWindowTitle("Supprimer la candidature")
-        msg.setText("Es-tu sûr de vouloir supprimer cette candidature ?")
-        msg.setInformativeText(
-            "La candidature sera supprimée de la base de données.\n"
-            "Tu peux aussi choisir de supprimer le fichier de lettre associé."
-        )
-        btn_db_only = msg.addButton("Supprimer (DB seulement)", QMessageBox.AcceptRole)
-        btn_db_and_file = msg.addButton("Supprimer (DB + fichier)", QMessageBox.DestructiveRole)
-        btn_cancel = msg.addButton("Annuler", QMessageBox.RejectRole)
-
-        msg.exec()
-
-        clicked = msg.clickedButton()
-        if clicked == btn_cancel:
-            return
-
-        # Si on doit supprimer le fichier
-        if clicked == btn_db_and_file and cand.chemin_lettre:
-            path = Path(cand.chemin_lettre)
-            if path.exists():
-                try:
-                    path.unlink()
-                except Exception as e:
-                    QMessageBox.warning(
-                        self,
-                        "Suppression fichier",
-                        f"Le fichier n'a pas pu être supprimé : {e}"
-                    )
-
-        offre_id = cand.offre_id
-
-        # Suppression en base
-        self.session.delete(cand)
-        self.session.commit()
-
-        # Rafraîchir la liste de candidatures pour l'offre
-        self._load_candidatures_for_offer(offre_id)
-
-    def on_mark_sent(self):
-        cand = self._get_selected_candidature()
-        if not cand:
-            QMessageBox.warning(
-                self,
-                "Marquer comme envoyée",
-                "Sélectionne d'abord une candidature dans la liste."
-            )
-            return
-
-        cand.statut = CandidatureStatut.ENVOYEE
-        cand.date_envoi = date.today()
-        self.session.commit()
-
-        QMessageBox.information(self, "Envoyée", "La candidature est maintenant marquée comme envoyée.")
-
-        self._load_candidatures_for_offer(cand.offre_id)
 
     def on_show_candidatures(self):
         try:
