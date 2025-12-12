@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Lettre de motivation – Rôles de Développeur Full Stack (Python/React) – Vitol</title>
+  <style>
+    :root {
+      --primary: #15803d;
+      --primary-light: #e6f6ec;
+      --accent: #0ea5e9;
+      --text-main: #222;
+      --text-muted: #555;
+      --bg: #f5f7fa;
+      --card-bg: #ffffff;
+      --border-soft: #dde3ea;
+      --shadow-soft: 0 10px 30px rgba(15, 23, 42, 0.08);
+      --font-main: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 40px 16px;
+      background: radial-gradient(circle at top left, #f1fbf6 0, #f5f7fa 40%, #edf4ff 100%);
+      font-family: var(--font-main);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+    }
+
+    .page {
+      max-width: 900px;
+      width: 100%;
+      background: linear-gradient(135deg, #ffffff 0, #fdfefe 50%, #f7fbff 100%);
+      border-radius: 20px;
+      box-shadow: var(--shadow-soft);
+      padding: 32px 32px 40px;
+      border: 1px solid rgba(148,163,184,0.25);
+    }
+
+    .page-header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 24px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    .identity, .job-info { flex: 1 1 260px; }
+
+    .identity h1 {
+      font-size: 1.6rem;
+      margin: 0 0 4px;
+      letter-spacing: 0.02em;
+    }
+
+    .identity h1 span { color: var(--primary); }
+
+    .identity p {
+      margin: 2px 0;
+      font-size: 0.95rem;
+      color: var(--text-muted);
+    }
+
+    .tagline {
+      margin-top: 8px;
+      font-size: 0.95rem;
+      padding: 6px 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 999px;
+      background: var(--primary-light);
+      color: var(--primary);
+      font-weight: 500;
+    }
+
+    .tagline-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--primary);
+      box-shadow: 0 0 0 4px rgba(21,128,61,0.2);
+    }
+
+    .job-info { text-align: right; font-size: 0.95rem; }
+
+    .job-title {
+      font-weight: 600;
+      font-size: 1.05rem;
+      margin-bottom: 4px;
+      color: var(--primary);
+    }
+
+    .company { font-weight: 600; }
+
+    .job-meta {
+      margin-top: 6px;
+      color: var(--text-muted);
+    }
+
+    .job-meta span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: 10px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #0f172a;
+      color: #e0f2fe;
+      font-size: 0.8rem;
+      margin-top: 8px;
+    }
+
+    .badge-dot {
+      width: 8px; height: 8px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 0 3px rgba(14,165,233,0.35);
+    }
+
+    .letter {
+      margin-top: 28px;
+      font-size: 1rem;
+      line-height: 1.6;
+      color: var(--text-main);
+    }
+
+    .letter-header {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 20px;
+      font-size: 0.95rem;
+      color: var(--text-muted);
+    }
+
+    .object {
+      font-weight: 600;
+      margin-bottom: 16px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: rgba(14,165,233,0.03);
+      border: 1px solid rgba(148,163,184,0.4);
+    }
+
+    .object span { color: var(--primary); }
+
+    .signature-block { margin-top: 20px; }
+    .signature-name { font-weight: 600; margin-top: 10px; }
+
+    @media (max-width: 720px) {
+      body { padding: 20px 10px; }
+      .page { padding: 20px 18px 26px; border-radius: 16px; }
+      .job-info { text-align: left; }
+      .letter-header { flex-direction: column; gap: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="page-header">
+      <section class="identity">
+        <h1><span>Ludovic</span> Ragon</h1>
+        <p>Développeur Python</p>
+        <p>ragon.ludovic@gmail.com</p>
+        <p>0644393481</p>
+        <p>Malbuisson</p>
+        <div class="tagline">
+          <div class="tagline-dot"></div>
+          Data pipelines · Python · Automatisation · CI/CD
+        </div>
+      </section>
+
+      <section class="job-info">
+        <div class="job-title">Candidature – Rôles de Développeur Full Stack (Python/React)</div>
+        <div class="company">Vitol</div>
+        <div class="job-meta">
+<span>JobUp</span>        </div>
+        <div class="badge">
+          <span class="badge-dot"></span>
+          Python · SQL · Automatisation · Pipelines CI/CD
+        </div>
+      </section>
+    </header>
+
+    <main class="letter">
+      <div class="letter-header">
+        <div class="coords">
+          <p>À l’attention du service recrutement</p>
+          <p>Vitol</p>
+          <p>Genêve</p>
+        </div>
+        <div class="company-block">
+          <p>Malbuisson, le 12/12/2025</p>
+        </div>
+      </div>
+
+      <div class="object">
+        Objet : <span>Candidature au poste de Rôles de Développeur Full Stack (Python/React)</span>
+      </div>
+
+      <p>Madame, Monsieur,</p>
+
+      <p>
+        Développeur Python passionné par les données, l'automatisation et la fiabilité des systèmes, je souhaite vous proposer ma candidature au poste de Rôles de Développeur Full Stack (Python/React) au sein de Vitol.
+      </p>
+
+      <p>
+        J’ai acquis une solide expérience dans la construction et l’optimisation de pipelines de données, l'automatisation via Python et l'exploitation d'environnements modernes. Je porte une attention particulière à la fiabilité en production, au monitoring proactif et à la traçabilité des traitements.
+      </p>
+
+      <p>
+        Je maîtrise SQL, Python, le scripting, et je suis à l’aise avec les architectures orientées données ainsi que les environnements cloud. J’apprécie mettre en place des chaînes d’intégration et de déploiement continues (CI/CD) robustes, permettant des livraisons maîtrisées et reproductibles.
+      </p>
+
+      <p>
+        Votre poste m’intéresse particulièrement pour son rôle central dans l’écosystème data : travailler en étroite collaboration avec les équipes techniques et métier, tout en garantissant la qualité et la fiabilité des solutions livrées. Cette transversalité correspond pleinement à ma manière de travailler.
+      </p>
+
+      <p>
+        Curieux, autonome et orienté solution, je m’investis dans l’amélioration continue : bonnes pratiques, performance, documentation et simplification des workflows. Mon expérience d’entrepreneur m’a appris à gérer plusieurs priorités simultanément et à proposer des solutions pragmatiques, adaptées aux besoins des utilisateurs.
+      </p>
+
+      <p>
+        Je serais heureux de pouvoir échanger avec vous au sujet de mes compétences, de mes projets et de la manière dont je pourrais contribuer à vos activités. Je reste à votre disposition pour un entretien.
+      </p>
+
+      <div class="signature-block">
+        <p>Veuillez agréer, Madame, Monsieur, mes salutations distinguées.</p>
+        <p class="signature-name">Ludovic Ragon</p>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

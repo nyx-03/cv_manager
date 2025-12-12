@@ -402,6 +402,135 @@ QFrame#Card {
     padding: 12px;
 }
 
+/* Offer cards (page Annonces) */
+QFrame#OfferCard {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+}
+
+QFrame#OfferCard:hover {
+    border: 1px solid #93c5fd;
+}
+
+/* OfferCard status colors (property: status) */
+QFrame#OfferCard[status="A_PREPARER"] {
+    background: #fff7ed;
+    border-left: 5px solid #fb923c;
+}
+
+QFrame#OfferCard[status="ENVOYEE"] {
+    background: #eff6ff;
+    border-left: 5px solid #2563eb;
+}
+
+QFrame#OfferCard[status="ENTRETIEN"] {
+    background: #ecfdf5;
+    border-left: 5px solid #10b981;
+}
+
+QFrame#OfferCard[status="REFUSEE"] {
+    background: #fef2f2;
+    border-left: 5px solid #ef4444;
+}
+
+
+QLabel#OfferCardTitle {
+    font-size: 15px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+QLabel#OfferCardSubtitle {
+    font-size: 13px;
+    color: #334155;
+}
+
+QLabel#OfferCardMeta {
+    font-size: 12px;
+    color: #64748b;
+}
+
+/* Offer detail page */
+QWidget#OfferDetailPage {
+    background: #f3f4f6;
+}
+
+QLabel#OfferDetailTitle {
+    font-size: 18px;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+QLabel#OfferDetailMeta {
+    font-size: 12px;
+    color: #475569;
+}
+
+QTextEdit#OfferDetailText {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 10px;
+}
+
+/* Letter cards (page Détail) */
+QFrame#LetterCard {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+}
+
+QFrame#LetterCard:hover {
+    border: 1px solid #93c5fd;
+}
+
+/* LetterCard status colors (property: status) */
+QFrame#LetterCard[status="A_PREPARER"] {
+    background: #fff7ed;
+    border-left: 5px solid #fb923c;
+}
+
+QFrame#LetterCard[status="ENVOYEE"] {
+    background: #eff6ff;
+    border-left: 5px solid #2563eb;
+}
+
+QFrame#LetterCard[status="ENTRETIEN"] {
+    background: #ecfdf5;
+    border-left: 5px solid #10b981;
+}
+
+QFrame#LetterCard[status="REFUSEE"] {
+    background: #fef2f2;
+    border-left: 5px solid #ef4444;
+}
+
+QLabel#LetterCardTitle {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+QLabel#LetterCardMeta {
+    font-size: 12px;
+    color: #64748b;
+}
+
+QLabel#LetterCardNotes {
+    font-size: 13px;
+    color: #334155;
+}
+
+/* Empty states */
+QLabel#EmptyState {
+    background: #ffffff;
+    border: 1px dashed #cbd5e1;
+    border-radius: 10px;
+    padding: 14px;
+    color: #64748b;
+}
+
 /* Sidebar */
 QFrame#Sidebar {
     background: #0f172a;
