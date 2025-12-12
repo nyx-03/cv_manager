@@ -12,6 +12,7 @@ from ui.stats_widget import StatsWidget
 from ui.settings_widget import SettingsWidget
 from ui.offer_list_widget import OfferListWidget
 from ui.pages.offer_detail_page import OfferDetailPage, LetterViewModel
+from ui.pages.offer_form_page import OfferFormPage
 
 from models import Offre
 
@@ -22,6 +23,7 @@ PAGE_OFFERS = 1
 PAGE_STATS = 2
 PAGE_SETTINGS = 3
 PAGE_OFFER_DETAIL = 4
+PAGE_ADD_OFFER = 5
 
 
 class ApplicationView(QWidget):
@@ -47,6 +49,7 @@ class ApplicationView(QWidget):
     - openLetterRequested(candidature_id)
     - markSentRequested(candidature_id)
     - deleteRequested(candidature_id)
+    - deleteOfferRequested(offer_id)
     """
 
     # Sidebar actions
@@ -63,6 +66,7 @@ class ApplicationView(QWidget):
     openLetterRequested = Signal(int)
     markSentRequested = Signal(int)
     deleteRequested = Signal(int)
+    deleteOfferRequested = Signal(int)
 
     def __init__(self, session, parent=None):
         super().__init__(parent)
@@ -79,6 +83,7 @@ class ApplicationView(QWidget):
             columns=3,
         )
         self.offer_detail_page = OfferDetailPage(self)
+        self.offer_form_page = OfferFormPage(self)
         self.dashboard = DashboardWidget(self.session, self)
         self.stats = StatsWidget(self.session, self)
         self.settings = SettingsWidget(self.session, self)
@@ -89,6 +94,7 @@ class ApplicationView(QWidget):
         self.stack.addWidget(self.stats)             # 2
         self.stack.addWidget(self.settings)          # 3
         self.stack.addWidget(self.offer_detail_page) # 4
+        self.stack.addWidget(self.offer_form_page)   # 5
 
         # 2) Layouts
         self.root_layout = QHBoxLayout(self)
@@ -143,6 +149,21 @@ class ApplicationView(QWidget):
         if hasattr(self.stats, "refresh"):
             self.stats.refresh()
 
+    def show_add_offer(self) -> None:
+        self.offer_form_page.reset_form()
+        self.set_page(PAGE_ADD_OFFER)
+
+    def show_edit_offer(self, offre: Offre) -> None:
+        self.offer_form_page.load_offer(offre)
+        self.set_page(PAGE_ADD_OFFER)
+
+    def show_offers(self) -> None:
+        """Show offers list page."""
+        self.set_page(PAGE_OFFERS)
+
+    def show_dashboard(self) -> None:
+        self.set_page(PAGE_DASHBOARD)
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
@@ -152,10 +173,15 @@ class ApplicationView(QWidget):
         self.offers_page.offerClicked.connect(self.offerClicked.emit)
 
         # Detail page
-        self.offer_detail_page.backRequested.connect(self.backToOffersRequested.emit)
+        self.offer_detail_page.backRequested.connect(self.show_offers)
         self.offer_detail_page.openLetterRequested.connect(self.openLetterRequested.emit)
         self.offer_detail_page.markSentRequested.connect(self.markSentRequested.emit)
         self.offer_detail_page.deleteRequested.connect(self.deleteRequested.emit)
+        self.offer_detail_page.deleteOfferRequested.connect(self.deleteOfferRequested.emit)
+
+        # Offer form page (add / edit)
+        self.offer_form_page.saved.connect(self._on_offer_saved)
+        self.offer_form_page.cancelled.connect(self._on_offer_cancelled)
 
         # Sidebar
         self.sidebar.navigateRequested.connect(self._handle_sidebar_nav)
@@ -166,18 +192,18 @@ class ApplicationView(QWidget):
         self._sync_active_page(self.stack.currentIndex())
 
     def _handle_sidebar_nav(self, page_name: str) -> None:
-        if page_name == self.sidebar.pages.DASHBOARD:
-            self.set_page(PAGE_DASHBOARD)
-        elif page_name == self.sidebar.pages.OFFERS:
-            self.set_page(PAGE_OFFERS)
-        elif page_name == self.sidebar.pages.STATS:
-            self.set_page(PAGE_STATS)
-        elif page_name == self.sidebar.pages.SETTINGS:
-            self.set_page(PAGE_SETTINGS)
+        mapping = {
+            self.sidebar.pages.DASHBOARD: PAGE_DASHBOARD,
+            self.sidebar.pages.OFFERS: PAGE_OFFERS,
+            self.sidebar.pages.STATS: PAGE_STATS,
+            self.sidebar.pages.SETTINGS: PAGE_SETTINGS,
+        }
+        if page_name in mapping:
+            self.set_page(mapping[page_name])
 
     def _handle_sidebar_action(self, action_name: str) -> None:
         if action_name == self.sidebar.actions.NEW_OFFER:
-            self.newOfferRequested.emit()
+            self.show_add_offer()
         elif action_name == self.sidebar.actions.PREPARE_LETTER:
             self.prepareLetterRequested.emit()
         elif action_name == self.sidebar.actions.SHOW_CANDIDATURES:
@@ -188,10 +214,25 @@ class ApplicationView(QWidget):
     def _sync_active_page(self, index: int) -> None:
         if index == PAGE_DASHBOARD:
             self.sidebar.set_active_page(self.sidebar.pages.DASHBOARD)
-        elif index == PAGE_OFFERS or index == PAGE_OFFER_DETAIL:
+        elif index in (PAGE_OFFERS, PAGE_OFFER_DETAIL, PAGE_ADD_OFFER):
             # Détail = sous-section des offres
             self.sidebar.set_active_page(self.sidebar.pages.OFFERS)
         elif index == PAGE_STATS:
             self.sidebar.set_active_page(self.sidebar.pages.STATS)
         elif index == PAGE_SETTINGS:
             self.sidebar.set_active_page(self.sidebar.pages.SETTINGS)
+
+    # ------------------------------------------------------------------
+    # Offer form handlers
+    # ------------------------------------------------------------------
+
+    def _on_offer_saved(self, offre: Offre) -> None:
+        """Called when an offer has been created or updated from OfferFormPage."""
+        self.current_offer = offre
+        self.show_offers()
+        self.refreshRequested.emit()
+        self.refresh_dashboard()
+
+    def _on_offer_cancelled(self) -> None:
+        """Called when user clicks 'Retour' in OfferFormPage."""
+        self.show_offers()

@@ -5,11 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QAction
 from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
-    QDialog,
 )
 
 from db import SessionLocal
@@ -34,7 +33,7 @@ from services.candidatures_service import (
     CandidatureCreateData,
 )
 from services.profile_service import ensure_profile
-from services.letters_service import generate_letter_html
+from services.letters_service import generate_letter_html, get_default_letter_template_path
 
 from models import Offre, Candidature, CandidatureStatut
 
@@ -47,9 +46,20 @@ class MainWindow(QMainWindow):
         self.showMaximized()
 
         self.session = SessionLocal()
+        self.current_offer: Offre | None = None
 
         self._setup_ui()
+        self._setup_actions()
         self._load_offers()
+
+    def _setup_actions(self):
+        # Menu "Offre" (simple, fonctionne même si la sidebar évolue)
+        offer_menu = self.menuBar().addMenu("Offre")
+
+        self.action_delete_offer = QAction("Supprimer l'annonce…", self)
+        self.action_delete_offer.setShortcut("Del")
+        self.action_delete_offer.triggered.connect(self.on_delete_offer)
+        offer_menu.addAction(self.action_delete_offer)
 
     def _setup_ui(self):
         self.view = ApplicationView(self.session, parent=self)
@@ -64,6 +74,7 @@ class MainWindow(QMainWindow):
         self.view.openLetterRequested.connect(self.on_open_letter_by_id)
         self.view.markSentRequested.connect(self.on_mark_sent_by_id)
         self.view.deleteRequested.connect(self.on_delete_candidature_by_id)
+        self.view.deleteOfferRequested.connect(self.on_delete_offer_by_id)
 
         self.view.newOfferRequested.connect(self.on_new_offer)
         self.view.prepareLetterRequested.connect(self.on_prepare_letter)
@@ -93,7 +104,6 @@ class MainWindow(QMainWindow):
             .first()
         )
         return last.statut.name if last and last.statut else "A_PREPARER"
-
 
     def open_offer_detail(self, offre: Offre):
         from ui.pages.offer_detail_page import LetterViewModel
@@ -181,58 +191,39 @@ class MainWindow(QMainWindow):
         if self.current_offer:
             self.open_offer_detail(self.current_offer)
 
+    def on_delete_offer_by_id(self, offer_id: int):
+        # Sélectionner l'offre courante à partir de l'ID
+        offre = self.session.query(Offre).filter_by(id=offer_id).first()
+        if not offre:
+            QMessageBox.warning(self, "Suppression", "Annonce introuvable.")
+            return
+
+        # Réutilise la logique existante basée sur l'offre sélectionnée
+        self.current_offer = offre
+        self.on_delete_offer()
+
     def _load_offers(self):
         offers = list_offers(self.session, desc=True)
         self.view.set_offers(offers)
 
+
     def on_new_offer(self):
-        dialog = OfferFormDialog(self)
-        result = dialog.exec()
-
-        if result == QDialog.Accepted:
-            data = dialog.get_data()
-
-            # Vérifier un minimum
-            if not data["titre_poste"]:
-                QMessageBox.warning(self, "Erreur", "Le titre du poste est obligatoire.")
-                return
-
-            # Sauvegarde via service
-            create_offer(
-                self.session,
-                OfferCreateData(
-                    titre_poste=data["titre_poste"],
-                    entreprise=data.get("entreprise", ""),
-                    source=data.get("source", ""),
-                    url=data.get("url", ""),
-                    localisation=data.get("localisation", ""),
-                    type_contrat=data.get("type_contrat", ""),
-                    texte_annonce=data.get("texte_annonce", ""),
-                ),
-            )
-
-            QMessageBox.information(self, "Succès", "Offre enregistrée.")
-            self._load_offers()  # rafraîchir la liste
-
-
+        """Open the add-offer page inside the stacked layout."""
+        try:
+            self.view.show_add_offer()
+        except Exception:
+            # Fallback: switch to offers page
+            self.view.set_page(PAGE_OFFERS)
     def _get_selected_offer(self) -> Offre | None:
         return self.current_offer
 
     def _get_letter_template_path(self) -> Path:
         """Retourne le chemin du template HTML utilisé pour générer les lettres.
 
-        Pour l'instant, on cherche un fichier `developer Python.html` dans quelques emplacements.
+        On utilise le template par défaut fourni par `letters_service` (templates/lettre_modern.html.j2).
         (On le rendra configurable via Settings ensuite.)
         """
-        candidates = [
-            Path(__file__).resolve().parent / "templates" / "developer Python.html",
-            Path.cwd() / "templates" / "developer Python.html",
-            Path.cwd() / "developer Python.html",
-        ]
-        for p in candidates:
-            if p.exists():
-                return p
-        raise FileNotFoundError("Template introuvable. Chemins testés :\n- " + "\n- ".join(str(p) for p in candidates))
+        return get_default_letter_template_path()
 
     def _get_letters_output_dir(self) -> Path:
         """Dossier de sortie des lettres générées."""
@@ -262,7 +253,7 @@ class MainWindow(QMainWindow):
             )
             output_path = result.output_path
         except FileNotFoundError as e:
-            QMessageBox.critical(self, "Template introuvable", str(e))
+            QMessageBox.critical(self, "Template introuvable (lettre)", str(e))
             return
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur lors de la génération de la lettre HTML : {e}")
@@ -302,3 +293,63 @@ class MainWindow(QMainWindow):
 
         dialog = CandidaturesWindow(self.session, parent=self)
         dialog.exec()
+
+    def on_delete_offer(self):
+        offre = self._get_selected_offer()
+        if not offre:
+            QMessageBox.warning(self, "Suppression", "Aucune annonce sélectionnée.")
+            return
+
+        # Compter les candidatures liées
+        cands = list_for_offer(self.session, offre.id, desc=True)
+        cand_count = len(cands)
+
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Supprimer l'annonce")
+        msg.setText("Es-tu sûr de vouloir supprimer cette annonce ?")
+        msg.setInformativeText(
+            f"Cette action supprimera l'annonce et ses {cand_count} candidature(s) associée(s) de la base.\n"
+            "Tu peux aussi choisir de supprimer les fichiers de lettres associés."
+        )
+
+        btn_db_only = msg.addButton("Supprimer (DB seulement)", QMessageBox.AcceptRole)
+        btn_db_and_files = msg.addButton("Supprimer (DB + fichiers)", QMessageBox.DestructiveRole)
+        btn_cancel = msg.addButton("Annuler", QMessageBox.RejectRole)
+
+        msg.exec()
+        clicked = msg.clickedButton()
+        if clicked == btn_cancel:
+            return
+
+        delete_files = (clicked == btn_db_and_files)
+
+        # Optionnel : supprimer les fichiers de lettres avant la suppression DB
+        if delete_files:
+            for cand in cands:
+                if cand.chemin_lettre:
+                    try:
+                        p = Path(cand.chemin_lettre)
+                        if p.exists() and p.is_file():
+                            p.unlink()
+                    except Exception:
+                        # On ne bloque pas la suppression DB pour un fichier
+                        pass
+
+        try:
+            # Supprime d'abord l'offre ; la relation cascade supprimera les candidatures
+            self.session.query(Offre).filter_by(id=offre.id).delete()
+            self.session.commit()
+        except Exception as e:
+            self.session.rollback()
+            QMessageBox.critical(self, "Erreur", f"Impossible de supprimer l'annonce : {e}")
+            return
+
+        # UI: revenir à la liste et rafraîchir
+        self.current_offer = None
+        try:
+            self.view.set_page(PAGE_OFFERS)
+        except Exception:
+            pass
+        self._load_offers()
+        QMessageBox.information(self, "Suppression", "Annonce supprimée.")

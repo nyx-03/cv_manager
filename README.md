@@ -8,7 +8,37 @@
 
 ### Application desktop pour gérer vos candidatures, CV et lettres de motivation
 
-CV Manager est une application de bureau développée en **Python + PySide6**, avec une architecture modulaire (services / vues) permettant de centraliser et d’organiser efficacement vos démarches de recherche d’emploi. Elle offre une interface moderne et intuitive pour gérer vos offres, candidatures, profil personnel, modèles HTML, ainsi que des tableaux de bord et statistiques.
+---
+
+## 🏷️ Dernière version – v0.2.0
+
+**v0.2.0** marque une étape majeure dans l’évolution de CV Manager, avec la structuration complète de l’application, une interface modernisée et l’introduction des lettres de motivation HTML.
+
+### ✨ Nouveautés principales
+
+- Génération de **lettres de motivation HTML/CSS** à partir de templates
+- Moteur de rendu **Jinja2** (conditions, variables, personnalisation avancée)
+- Vue détaillée des offres avec les lettres associées
+- Tableau de bord (dashboard) et premières statistiques
+- Page **Paramètres** centralisant le profil candidat
+- Sidebar de navigation unifiée
+- Import initial d’offres depuis une **URL** (Jobup – extraction progressive)
+
+### 🔧 Améliorations techniques
+
+- Séparation claire **UI / Services / Modèles**
+- Centralisation de la logique métier (offers, candidatures, letters, profile)
+- Navigation basée sur `QStackedLayout`
+- Refonte complète du style **QSS** (clair, lisible, professionnel)
+
+### 🐛 Correctifs notables
+
+- Correction des erreurs QSS non supportées par Qt
+- Résolution des problèmes de rendu des templates de lettres
+- Correction des imports PySide6 et des comportements de sélection Qt
+- Stabilisation de la base SQLite / SQLAlchemy
+
+➡️ Voir le détail complet dans le fichier [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 

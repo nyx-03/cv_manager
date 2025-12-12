@@ -108,12 +108,14 @@ class OfferDetailPage(QWidget):
     - openLetterRequested(candidature_id)
     - markSentRequested(candidature_id)
     - deleteRequested(candidature_id)
+    - deleteOfferRequested(offer_id)
     """
 
     backRequested = Signal()
     openLetterRequested = Signal(int)
     markSentRequested = Signal(int)
     deleteRequested = Signal(int)
+    deleteOfferRequested = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -127,11 +129,20 @@ class OfferDetailPage(QWidget):
 
         # Header
         header = QHBoxLayout()
+
         self.btn_back = QPushButton("← Retour aux annonces")
         self.btn_back.setObjectName("SecondaryButton")
         self.btn_back.clicked.connect(self.backRequested.emit)
         header.addWidget(self.btn_back)
+
         header.addStretch(1)
+
+        self.btn_delete_offer = QPushButton("Supprimer l’annonce")
+        self.btn_delete_offer.setObjectName("DangerButton")
+        self.btn_delete_offer.setToolTip("Supprimer cette annonce et ses candidatures associées")
+        self.btn_delete_offer.clicked.connect(self._on_delete_offer_clicked)
+        header.addWidget(self.btn_delete_offer)
+
         root.addLayout(header)
 
         # Title + meta
@@ -220,6 +231,13 @@ class OfferDetailPage(QWidget):
             self.letters_layout.addWidget(card)
 
         self.letters_layout.addStretch(1)
+
+    def _on_delete_offer_clicked(self):
+        # UI only: on délègue la suppression réelle au contrôleur (MainWindow)
+        offer_id = getattr(self.current_offer, "id", None)
+        if offer_id is None:
+            return
+        self.deleteOfferRequested.emit(int(offer_id))
 
     # ---------------------------
     # Internals

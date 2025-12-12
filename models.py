@@ -1,10 +1,11 @@
 # models.py
 from sqlalchemy import (
-    Column, Integer, String, Text, ForeignKey, Date, Enum, Boolean
+    Column, Integer, String, Text, ForeignKey, Date, DateTime, Enum, Boolean
 )
 from sqlalchemy.orm import relationship
 from db import Base
 import enum
+from datetime import datetime
 
 
 class CompetenceCategorie(enum.Enum):
@@ -132,7 +133,19 @@ class Offre(Base):
     titre_poste = Column(String(200), nullable=False)
     entreprise = Column(String(200), nullable=True)
     source = Column(String(200), nullable=True)          # Jobup, LinkedIn, etc.
+
+    # URL saisi/visible (historique) — on le garde pour compatibilité
     url = Column(String(500), nullable=True)
+
+    # URL d'origine de l'annonce (pour import). Peut être identique à `url`.
+    source_url = Column(String(500), nullable=True, index=True, unique=True)
+
+    # Domaine/site d'origine (ex: "jobup.ch", "hellowork.com")
+    source_site = Column(String(200), nullable=True, index=True)
+
+    # Date d'ajout/import (utile pour tri/filtre)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
     localisation = Column(String(200), nullable=True)
     type_contrat = Column(String(100), nullable=True)
     texte_annonce = Column(Text, nullable=True)          # texte collé
