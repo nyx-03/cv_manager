@@ -35,7 +35,7 @@ from services.candidatures_service import (
 from services.profile_service import ensure_profile
 from services.letters_service import generate_letter_html, get_default_letter_template_path
 
-from models import Offre, Candidature, CandidatureStatut
+from models import Offre, Candidature, CandidatureStatut, LettreMotivation, LettreStatut
 
 
 class MainWindow(QMainWindow):
@@ -64,6 +64,7 @@ class MainWindow(QMainWindow):
     def _setup_ui(self):
         self.view = ApplicationView(self.session, parent=self)
         self.setCentralWidget(self.view)
+        self._wire_offer_detail_editor()
 
         # Provide status resolver for offer cards (colors)
         self.view.set_offers_status_resolver(self._resolve_offer_status)
@@ -81,7 +82,44 @@ class MainWindow(QMainWindow):
         self.view.showCandidaturesRequested.connect(self.on_show_candidatures)
         self.view.refreshRequested.connect(self._refresh_current_page)
 
+    def _get_offer_detail_page_widget(self):
+        """Retourne le widget OfferDetailPage si accessible via ApplicationView (best-effort)."""
+        # Common attribute name
+        if hasattr(self.view, "offer_detail_page"):
+            return getattr(self.view, "offer_detail_page")
+        # Common accessor
+        if hasattr(self.view, "get_offer_detail_page"):
+            try:
+                return self.view.get_offer_detail_page()
+            except Exception:
+                return None
+        # Generic lookup in stacked widget
+        if hasattr(self.view, "stack"):
+            try:
+                w = self.view.stack.widget(PAGE_OFFER_DETAIL)
+                return w
+            except Exception:
+                return None
+        return None
+
+    def _wire_offer_detail_editor(self):
+        """Connecte les signaux de l'éditeur de lettre (OfferDetailPage) au contrôleur."""
+        if getattr(self, "_offer_detail_editor_wired", False):
+            return
+        page = self._get_offer_detail_page_widget()
+        if not page:
+            return
+
+        # Connexions best-effort (le widget peut ne pas avoir encore ces signaux selon la version)
+        if hasattr(page, "saveDraftRequested"):
+            page.saveDraftRequested.connect(self.on_save_letter_draft)  # type: ignore
+        if hasattr(page, "generateLetterRequested"):
+            page.generateLetterRequested.connect(self.on_generate_letter_from_editor)  # type: ignore
+
+        self._offer_detail_editor_wired = True
+
     def _refresh_current_page(self):
+        self._wire_offer_detail_editor()
         idx = self.view.current_page() if hasattr(self, "view") else -1
         if idx == PAGE_DASHBOARD:
             self.view.refresh_dashboard()
@@ -110,6 +148,16 @@ class MainWindow(QMainWindow):
 
         self.current_offer = offre
         self.view.show_offer_detail(offre)
+
+        # Pré-remplissage de l'éditeur avec la lettre courante (si l'UI la supporte)
+        try:
+            lettre = self._get_or_create_current_lettre(offre)
+            page = self._get_offer_detail_page_widget()
+            if page and hasattr(page, "set_letter_content"):
+                page.set_letter_content(lettre)
+        except Exception:
+            # Ne bloque pas l'ouverture du détail si la lettre n'est pas dispo
+            pass
 
         candidatures = list_for_offer(self.session, offre.id, desc=True)
 
@@ -231,6 +279,42 @@ class MainWindow(QMainWindow):
         out_dir.mkdir(parents=True, exist_ok=True)
         return out_dir
 
+    def _get_or_create_current_lettre(self, offre: Offre) -> LettreMotivation:
+        """Retourne la lettre courante (brouillon) pour une offre.
+
+        Stratégie:
+        - Si une lettre `is_current=True` existe: on la retourne.
+        - Sinon: on crée une v1 en BROUILLON.
+
+        NOTE: les paragraphes peuvent être vides au début; `letters_service` appliquera ses defaults.
+        """
+        lettre = (
+            self.session.query(LettreMotivation)
+            .filter_by(offre_id=offre.id, is_current=True)
+            .order_by(LettreMotivation.version.desc())
+            .first()
+        )
+        if lettre:
+            return lettre
+
+        last_version = (
+            self.session.query(LettreMotivation)
+            .filter_by(offre_id=offre.id)
+            .order_by(LettreMotivation.version.desc())
+            .first()
+        )
+        next_version = (last_version.version + 1) if last_version else 1
+
+        lettre = LettreMotivation(
+            offre_id=offre.id,
+            version=next_version,
+            is_current=True,
+            statut=LettreStatut.BROUILLON,
+        )
+        self.session.add(lettre)
+        self.session.commit()
+        return lettre
+
     def on_prepare_letter(self):
         offre = self._get_selected_offer()
         if not offre:
@@ -238,6 +322,13 @@ class MainWindow(QMainWindow):
             return
 
         profil = ensure_profile(self.session)
+
+        # Lettre (brouillon) associée à l'offre: source de vérité pour le contenu édité
+        try:
+            lettre = self._get_or_create_current_lettre(offre)
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur", f"Impossible de préparer le brouillon de lettre : {e}")
+            return
 
         try:
             template_path = self._get_letter_template_path()
@@ -249,9 +340,20 @@ class MainWindow(QMainWindow):
                 output_dir=out_dir,
                 profil=profil,
                 offre=offre,
+                lettre=lettre,
                 filename_hint=hint or "lettre",
             )
             output_path = result.output_path
+
+            # Persiste le résultat sur la lettre
+            try:
+                lettre.output_path = str(output_path)
+                lettre.statut = LettreStatut.GENEREE
+                self.session.add(lettre)
+                self.session.commit()
+            except Exception:
+                self.session.rollback()
+                # On ne bloque pas l'utilisateur si la lettre a été générée, mais on signale le souci.
         except FileNotFoundError as e:
             QMessageBox.critical(self, "Template introuvable (lettre)", str(e))
             return
@@ -259,16 +361,41 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Erreur", f"Erreur lors de la génération de la lettre HTML : {e}")
             return
 
-        create_candidature(
-            self.session,
-            CandidatureCreateData(
-                offre_id=offre.id,
-                statut=CandidatureStatut.A_PREPARER,
-                date_envoi=None,
-                notes="",
-                chemin_lettre=str(output_path),
-            ),
-        )
+        created = None
+        try:
+            created = create_candidature(
+                self.session,
+                CandidatureCreateData(
+                    offre_id=offre.id,
+                    statut=CandidatureStatut.A_PREPARER,
+                    date_envoi=None,
+                    notes="",
+                    chemin_lettre=str(output_path),
+                ),
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur", f"Impossible de créer la candidature : {e}")
+            return
+
+        # Lien candidature -> lettre (si supporté par le modèle)
+        try:
+            cand_obj = None
+            if created is not None:
+                cand_obj = created
+            else:
+                cand_obj = (
+                    self.session.query(Candidature)
+                    .filter_by(offre_id=offre.id)
+                    .order_by(Candidature.id.desc())
+                    .first()
+                )
+
+            if cand_obj is not None and hasattr(cand_obj, "lettre_id"):
+                cand_obj.lettre_id = lettre.id
+                self.session.add(cand_obj)
+                self.session.commit()
+        except Exception:
+            self.session.rollback()
 
         QMessageBox.information(
             self,
@@ -353,3 +480,88 @@ class MainWindow(QMainWindow):
             pass
         self._load_offers()
         QMessageBox.information(self, "Suppression", "Annonce supprimée.")
+    def _normalize_letter_payload(self, payload: dict) -> dict:
+        """Normalise un payload d'éditeur vers les champs du modèle LettreMotivation.
+
+        L'UI peut envoyer soit des clés courtes (intro/exp1/...), soit les champs
+        du modèle (paragraphe_intro/paragraphe_exp1/...).
+        """
+        if not payload:
+            return {}
+
+        mapping = {
+            "intro": "paragraphe_intro",
+            "exp1": "paragraphe_exp1",
+            "exp2": "paragraphe_exp2",
+            "poste": "paragraphe_poste",
+            "personnalite": "paragraphe_personnalite",
+            "conclusion": "paragraphe_conclusion",
+        }
+
+        out: dict = {}
+        for k, v in payload.items():
+            key = mapping.get(k, k)
+            out[key] = v
+        return out
+
+    def on_save_letter_draft(self, payload: dict):
+        """Sauvegarde le brouillon de lettre (contenu édité) dans LettreMotivation."""
+        offre = self._get_selected_offer()
+        if not offre:
+            QMessageBox.warning(self, "Brouillon", "Sélectionne d'abord une offre.")
+            return
+
+        try:
+            lettre = self._get_or_create_current_lettre(offre)
+            payload = self._normalize_letter_payload(payload)
+            for k, v in payload.items():
+                if hasattr(lettre, k):
+                    setattr(lettre, k, v)
+            # Si l'utilisateur édite, on reste au minimum en BROUILLON
+            if hasattr(lettre, "statut") and lettre.statut is None:
+                lettre.statut = LettreStatut.BROUILLON
+
+            self.session.add(lettre)
+            self.session.commit()
+
+            # Optional: update draft status badge if available
+            try:
+                page = self._get_offer_detail_page_widget()
+                if page and hasattr(page, "_set_draft_status"):
+                    page._set_draft_status("Brouillon (enregistré)", False)
+            except Exception:
+                pass
+
+            # Feedback discret
+            try:
+                self.statusBar().showMessage("Brouillon de lettre enregistré.", 2500)
+            except Exception:
+                pass
+        except Exception as e:
+            self.session.rollback()
+            QMessageBox.critical(self, "Erreur", f"Impossible d'enregistrer le brouillon : {e}")
+
+    def on_generate_letter_from_editor(self):
+        """Génère la lettre depuis l'éditeur: sauvegarde puis appelle la génération."""
+        page = self._get_offer_detail_page_widget()
+        payload = None
+        if page:
+            # Récupère les champs directement si présents (évite de dépendre d'un signal payload)
+            try:
+                payload = {
+                    "paragraphe_intro": page.ed_intro.toPlainText().strip() if hasattr(page, "ed_intro") else "",
+                    "paragraphe_exp1": page.ed_exp1.toPlainText().strip() if hasattr(page, "ed_exp1") else "",
+                    "paragraphe_exp2": page.ed_exp2.toPlainText().strip() if hasattr(page, "ed_exp2") else "",
+                    "paragraphe_poste": page.ed_poste.toPlainText().strip() if hasattr(page, "ed_poste") else "",
+                    "paragraphe_personnalite": page.ed_personnalite.toPlainText().strip() if hasattr(page, "ed_personnalite") else "",
+                    "paragraphe_conclusion": page.ed_conclusion.toPlainText().strip() if hasattr(page, "ed_conclusion") else "",
+                }
+                payload = self._normalize_letter_payload(payload)
+            except Exception:
+                payload = None
+
+        if payload:
+            self.on_save_letter_draft(payload)
+
+        # Lance ensuite la génération standard
+        self.on_prepare_letter()

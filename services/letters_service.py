@@ -143,6 +143,7 @@ def generate_letter_html(
     output_dir: str | Path,
     profil: object,
     offre: object,
+    lettre: object | None = None,
     filename_hint: str = "lettre",
     extra_context: Optional[Mapping[str, Any]] = None,
     now: Optional[datetime] = None,
@@ -154,6 +155,7 @@ def generate_letter_html(
         output_dir: dossier de sortie.
         profil: objet profil (ex: ProfilCandidat).
         offre: objet offre (ex: Offre).
+        lettre: objet LettreMotivation optionnel utilisé pour alimenter le contenu.
         filename_hint: base de nom de fichier.
         extra_context: champs additionnels.
         now: override de la date/heure (tests).
@@ -189,6 +191,21 @@ def generate_letter_html(
         )
 
     context = build_letter_context(profil=profil, offre=offre, now=now)
+    if lettre is not None:
+        for field in (
+            "paragraphe_intro",
+            "paragraphe_exp1",
+            "paragraphe_exp2",
+            "paragraphe_poste",
+            "paragraphe_personnalite",
+            "paragraphe_conclusion",
+        ):
+            if hasattr(lettre, field):
+                value = getattr(lettre, field)
+                if value:
+                    context[field] = value
+        # If lettre has template_name or output_path, do NOT override template_path or output_dir automatically (UI controlled)
+
     if extra_context:
         context.update(dict(extra_context))
 

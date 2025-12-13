@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QSignalBlocker
 from PySide6.QtWidgets import (
     QWidget,
     QLabel,
@@ -14,6 +14,9 @@ from PySide6.QtWidgets import (
     QFrame,
     QTextEdit,
     QSizePolicy,
+    QTabWidget,
+    QFormLayout,
+    QGroupBox,
 )
 
 
@@ -90,7 +93,11 @@ class LetterCard(QFrame):
         self.style().polish(self)
 
     def mousePressEvent(self, event):
-        # Full card clickable = open
+        # Full card clickable = open, but don't hijack clicks on action buttons.
+        child = self.childAt(event.pos())
+        if isinstance(child, QPushButton):
+            return super().mousePressEvent(event)
+
         self.openRequested.emit(self.vm.id)
         super().mousePressEvent(event)
 
@@ -116,6 +123,8 @@ class OfferDetailPage(QWidget):
     markSentRequested = Signal(int)
     deleteRequested = Signal(int)
     deleteOfferRequested = Signal(int)
+    saveDraftRequested = Signal(dict)   # payload: paragraph fields
+    generateLetterRequested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -156,21 +165,124 @@ class OfferDetailPage(QWidget):
         self.lbl_meta.setObjectName("OfferDetailMeta")
         root.addWidget(self.lbl_meta)
 
-        # Offer text
+        # Tabs (Annonce / Lettre / Lettres)
+        self.tabs = QTabWidget()
+        self.tabs.setObjectName("OfferDetailTabs")
+        root.addWidget(self.tabs, 1)
+
+        # --- Tab: Annonce ---
+        tab_offer = QWidget()
+        tab_offer_layout = QVBoxLayout(tab_offer)
+        tab_offer_layout.setContentsMargins(0, 0, 0, 0)
+        tab_offer_layout.setSpacing(10)
+
+        offer_box = QGroupBox("Annonce")
+        offer_box.setObjectName("OfferBox")
+        offer_box_layout = QVBoxLayout(offer_box)
+        offer_box_layout.setContentsMargins(12, 12, 12, 12)
+        offer_box_layout.setSpacing(10)
+
         self.txt_offer = QTextEdit()
         self.txt_offer.setReadOnly(True)
+        self.txt_offer.setAcceptRichText(False)
         self.txt_offer.setObjectName("OfferDetailText")
-        root.addWidget(self.txt_offer)
+        offer_box_layout.addWidget(self.txt_offer)
 
-        # Letters title
-        letters_title = QLabel("Lettres / candidatures")
-        letters_title.setProperty("heading", True)
-        root.addWidget(letters_title)
+        tab_offer_layout.addWidget(offer_box)
+        tab_offer_layout.addStretch(1)
 
-        # Letters scroll
+        self.tabs.addTab(tab_offer, "Annonce")
+
+        # --- Tab: Lettre (éditeur) ---
+        tab_editor = QWidget()
+        tab_editor_layout = QVBoxLayout(tab_editor)
+        tab_editor_layout.setContentsMargins(0, 0, 0, 0)
+        tab_editor_layout.setSpacing(10)
+
+        editor_box = QGroupBox("Édition de la lettre")
+        editor_box.setObjectName("LetterEditorBox")
+        editor_layout = QVBoxLayout(editor_box)
+        editor_layout.setContentsMargins(12, 12, 12, 12)
+        editor_layout.setSpacing(10)
+
+        # Draft status (UX)
+        self.lbl_draft_status = QLabel("Brouillon")
+        self.lbl_draft_status.setObjectName("DraftStatus")
+        self.lbl_draft_status.setProperty("dirty", False)
+        self.lbl_draft_status.style().unpolish(self.lbl_draft_status)
+        self.lbl_draft_status.style().polish(self.lbl_draft_status)
+        editor_layout.addWidget(self.lbl_draft_status)
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignTop)
+        form.setFormAlignment(Qt.AlignTop)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(8)
+
+        def _mk_field(placeholder: str, min_h: int = 80):
+            txt = QTextEdit()
+            txt.setAcceptRichText(False)
+            txt.setMinimumHeight(min_h)
+            txt.setPlaceholderText(placeholder)
+            txt.setTabChangesFocus(True)
+            txt.textChanged.connect(self._mark_draft_dirty)
+            return txt
+
+        self.ed_intro = _mk_field("Présente-toi en 2–3 phrases et annonce ton intérêt pour Vitol.")
+        self.ed_exp1 = _mk_field("Expérience 1 : projet / techno / impact métier / résultats mesurables.")
+        self.ed_exp2 = _mk_field("Expérience 2 : autonomie, delivery, qualité, CI/CD, performance, etc.")
+        self.ed_poste = _mk_field("Explique pourquoi ce poste (Python + C# + React) te correspond et comment tu vas apporter de la valeur.")
+        self.ed_personnalite = _mk_field("Soft skills : rigueur, sens business, communication, autonomie, esprit d'équipe…")
+        self.ed_conclusion = _mk_field("Conclusion courte : motivation + disponibilité + proposition d'échange.", min_h=70)
+
+        form.addRow("Introduction", self.ed_intro)
+        form.addRow("Expérience / adéquation 1", self.ed_exp1)
+        form.addRow("Expérience / adéquation 2", self.ed_exp2)
+        form.addRow("Lien avec le poste", self.ed_poste)
+        form.addRow("Personnalité / soft skills", self.ed_personnalite)
+        form.addRow("Conclusion", self.ed_conclusion)
+
+        editor_layout.addLayout(form)
+
+        # Actions bar
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+
+        self.btn_save_draft = QPushButton("Enregistrer")
+        self.btn_save_draft.setObjectName("PrimaryButton")
+        self.btn_save_draft.setToolTip("Enregistre le brouillon en base")
+        self.btn_save_draft.clicked.connect(self._emit_save_draft)
+        actions.addWidget(self.btn_save_draft)
+
+        self.btn_generate = QPushButton("Générer HTML")
+        self.btn_generate.setObjectName("SecondaryButton")
+        self.btn_generate.setToolTip("Génère la lettre HTML à partir du brouillon")
+        self.btn_generate.clicked.connect(self.generateLetterRequested.emit)
+        actions.addWidget(self.btn_generate)
+
+        editor_layout.addLayout(actions)
+
+        tab_editor_layout.addWidget(editor_box)
+        tab_editor_layout.addStretch(1)
+
+        self.tabs.addTab(tab_editor, "Lettre")
+
+        # --- Tab: Lettres / candidatures ---
+        tab_letters = QWidget()
+        tab_letters_layout = QVBoxLayout(tab_letters)
+        tab_letters_layout.setContentsMargins(0, 0, 0, 0)
+        tab_letters_layout.setSpacing(10)
+
+        letters_box = QGroupBox("Lettres / candidatures")
+        letters_box.setObjectName("LettersBox")
+        letters_box_layout = QVBoxLayout(letters_box)
+        letters_box_layout.setContentsMargins(12, 12, 12, 12)
+        letters_box_layout.setSpacing(10)
+
         self.letters_scroll = QScrollArea()
         self.letters_scroll.setWidgetResizable(True)
         self.letters_scroll.setFrameShape(QScrollArea.NoFrame)
+        self.letters_scroll.setObjectName("LettersScroll")
 
         self.letters_container = QWidget()
         self.letters_layout = QVBoxLayout(self.letters_container)
@@ -178,7 +290,15 @@ class OfferDetailPage(QWidget):
         self.letters_layout.setSpacing(10)
 
         self.letters_scroll.setWidget(self.letters_container)
-        root.addWidget(self.letters_scroll)
+        letters_box_layout.addWidget(self.letters_scroll)
+
+        tab_letters_layout.addWidget(letters_box)
+        tab_letters_layout.addStretch(1)
+
+        self.tabs.addTab(tab_letters, "Candidatures")
+
+        # Default tab
+        self.tabs.setCurrentIndex(1)
 
     # ---------------------------
     # Public API
@@ -209,6 +329,31 @@ class OfferDetailPage(QWidget):
 
         texte = getattr(offer, "texte_annonce", None) or getattr(offer, "description", None) or ""
         self.txt_offer.setPlainText(str(texte) if texte is not None else "")
+
+    def set_letter_content(self, lettre: object | None) -> None:
+        """Pré-remplit l’éditeur avec le contenu d’une LettreMotivation."""
+        def _val(obj, name):
+            return getattr(obj, name, "") if obj is not None else ""
+
+        # Prevent textChanged() from flagging the draft as dirty during programmatic fill.
+        blockers = [
+            QSignalBlocker(self.ed_intro),
+            QSignalBlocker(self.ed_exp1),
+            QSignalBlocker(self.ed_exp2),
+            QSignalBlocker(self.ed_poste),
+            QSignalBlocker(self.ed_personnalite),
+            QSignalBlocker(self.ed_conclusion),
+        ]
+        _ = blockers  # keep references alive until the end of the method
+
+        self.ed_intro.setPlainText(_val(lettre, "paragraphe_intro"))
+        self.ed_exp1.setPlainText(_val(lettre, "paragraphe_exp1"))
+        self.ed_exp2.setPlainText(_val(lettre, "paragraphe_exp2"))
+        self.ed_poste.setPlainText(_val(lettre, "paragraphe_poste"))
+        self.ed_personnalite.setPlainText(_val(lettre, "paragraphe_personnalite"))
+        self.ed_conclusion.setPlainText(_val(lettre, "paragraphe_conclusion"))
+
+        self._set_draft_status("Brouillon", dirty=False)
 
     def set_letters(self, letters: Iterable[LetterViewModel]) -> None:
         """Rend les cartes de lettres/candidatures."""
@@ -243,9 +388,32 @@ class OfferDetailPage(QWidget):
     # Internals
     # ---------------------------
 
+    def _set_draft_status(self, text: str, dirty: bool) -> None:
+        if not hasattr(self, "lbl_draft_status"):
+            return
+        self.lbl_draft_status.setText(text)
+        self.lbl_draft_status.setProperty("dirty", bool(dirty))
+        self.lbl_draft_status.style().unpolish(self.lbl_draft_status)
+        self.lbl_draft_status.style().polish(self.lbl_draft_status)
+
+    def _mark_draft_dirty(self):
+        self._set_draft_status("Brouillon (modifié)", dirty=True)
+
     def _clear_layout(self, layout: QVBoxLayout) -> None:
         while layout.count():
             item = layout.takeAt(0)
             w = item.widget()
             if w is not None:
                 w.deleteLater()
+
+    def _emit_save_draft(self):
+        payload = {
+            "paragraphe_intro": self.ed_intro.toPlainText().strip(),
+            "paragraphe_exp1": self.ed_exp1.toPlainText().strip(),
+            "paragraphe_exp2": self.ed_exp2.toPlainText().strip(),
+            "paragraphe_poste": self.ed_poste.toPlainText().strip(),
+            "paragraphe_personnalite": self.ed_personnalite.toPlainText().strip(),
+            "paragraphe_conclusion": self.ed_conclusion.toPlainText().strip(),
+        }
+        self.saveDraftRequested.emit(payload)
+        self._set_draft_status("Brouillon (enregistré)", dirty=False)

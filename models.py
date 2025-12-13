@@ -1,6 +1,6 @@
 # models.py
 from sqlalchemy import (
-    Column, Integer, String, Text, ForeignKey, Date, DateTime, Enum, Boolean
+    Column, Integer, String, Text, ForeignKey, Date, DateTime, Enum, Boolean, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 from db import Base
@@ -37,6 +37,22 @@ class CandidatureStatut(enum.Enum):
         return mapping.get(self, self.value)
 
 
+class LettreStatut(enum.Enum):
+    BROUILLON = "brouillon"
+    GENEREE = "generee"
+    ENVOYEE = "envoyee"
+    ARCHIVEE = "archivee"
+
+    def label(self):
+        mapping = {
+            LettreStatut.BROUILLON: "Brouillon",
+            LettreStatut.GENEREE: "Générée",
+            LettreStatut.ENVOYEE: "Envoyée",
+            LettreStatut.ARCHIVEE: "Archivée",
+        }
+        return mapping.get(self, self.value)
+
+
 class ProfilCandidat(Base):
     __tablename__ = "profil_candidat"
 
@@ -45,7 +61,10 @@ class ProfilCandidat(Base):
     prenom = Column(String(100), nullable=False)
     email = Column(String(200), nullable=False)
     telephone = Column(String(50), nullable=True)
+    adresse = Column(String(300), nullable=True)
+    code_postal = Column(String(20), nullable=True)
     ville = Column(String(100), nullable=True)
+    pays = Column(String(100), nullable=True)
     titre = Column(String(200), nullable=True)  # ex: "Développeur Python / Data"
     resume = Column(Text, nullable=True)
     lien_linkedin = Column(String(300), nullable=True)
@@ -79,6 +98,12 @@ class ProfilCandidat(Base):
     @portfolio.setter
     def portfolio(self, value):
         self.lien_portfolio = value
+
+
+    @property
+    def adresse_complete(self):
+        parts = [p for p in [self.adresse, self.code_postal, self.ville, self.pays] if p]
+        return ", ".join(parts)
 
 
 class Experience(Base):
@@ -151,6 +176,7 @@ class Offre(Base):
     texte_annonce = Column(Text, nullable=True)          # texte collé
 
     candidatures = relationship("Candidature", back_populates="offre", cascade="all, delete-orphan")
+    lettres = relationship("LettreMotivation", back_populates="offre", cascade="all, delete-orphan")
 
 
 class Candidature(Base):
@@ -158,6 +184,7 @@ class Candidature(Base):
 
     id = Column(Integer, primary_key=True)
     offre_id = Column(Integer, ForeignKey("offre.id"), nullable=False)
+    lettre_id = Column(Integer, ForeignKey("lettre_motivation.id"), nullable=True, index=True)
 
     date_envoi = Column(Date, nullable=True)
     statut = Column(Enum(CandidatureStatut), nullable=False, default=CandidatureStatut.A_PREPARER)
@@ -166,6 +193,50 @@ class Candidature(Base):
     notes = Column(Text, nullable=True)
 
     offre = relationship("Offre", back_populates="candidatures")
+    lettre = relationship("LettreMotivation")
+
+
+class LettreMotivation(Base):
+    __tablename__ = "lettre_motivation"
+
+    id = Column(Integer, primary_key=True)
+    offre_id = Column(Integer, ForeignKey("offre.id"), nullable=False, index=True)
+
+    # Versionning / état
+    version = Column(Integer, nullable=False, default=1)
+    is_current = Column(Boolean, nullable=False, default=True)
+    statut = Column(Enum(LettreStatut), nullable=False, default=LettreStatut.BROUILLON)
+
+    # Template utilisé (nom ou chemin logique)
+    template_name = Column(String(200), nullable=True, default="lettre_modern.html.j2")
+
+    # Sorties générées
+    output_path = Column(String(500), nullable=True)  # chemin du .html généré
+
+    # Contenu éditable (par paragraphes)
+    objet = Column(String(300), nullable=True)
+    tagline = Column(String(300), nullable=True)
+    reference = Column(String(120), nullable=True)
+    badge_text = Column(String(120), nullable=True)
+
+    paragraphe_intro = Column(Text, nullable=True)
+    paragraphe_exp1 = Column(Text, nullable=True)
+    paragraphe_exp2 = Column(Text, nullable=True)
+    paragraphe_poste = Column(Text, nullable=True)
+    paragraphe_personnalite = Column(Text, nullable=True)
+    paragraphe_conclusion = Column(Text, nullable=True)
+
+    notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    offre = relationship("Offre", back_populates="lettres")
+
+    __table_args__ = (
+        # Une version unique par offre
+        UniqueConstraint("offre_id", "version", name="uq_lettre_offre_version"),
+    )
 
 
 class TemplateCV(Base):

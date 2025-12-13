@@ -456,6 +456,44 @@ QWidget#OfferDetailPage {
     background: #f3f4f6;
 }
 
+/* Offer detail tabs */
+QTabWidget#OfferDetailTabs {
+    background: transparent;
+}
+
+QTabWidget#OfferDetailTabs::pane {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #ffffff;
+    padding: 10px;
+}
+
+QTabBar::tab {
+    background: #e5e7eb;
+    color: #111827;
+    border: 1px solid #d1d5db;
+    border-bottom: none;
+    padding: 8px 12px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    margin-right: 6px;
+    font-weight: 600;
+}
+
+QTabBar::tab:hover {
+    background: #dbeafe;
+}
+
+QTabBar::tab:selected {
+    background: #ffffff;
+    color: #0f172a;
+    border-color: #e5e7eb;
+}
+
+QTabBar::tab:selected:hover {
+    background: #ffffff;
+}
+
 QLabel#OfferDetailTitle {
     font-size: 18px;
     font-weight: 800;
@@ -472,6 +510,76 @@ QTextEdit#OfferDetailText {
     border: 1px solid #e5e7eb;
     border-radius: 10px;
     padding: 10px;
+}
+
+/* Offer detail group boxes */
+QGroupBox#OfferBox,
+QGroupBox#LetterEditorBox,
+QGroupBox#LettersBox {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    margin-top: 12px;
+    padding: 10px;
+    background: #ffffff;
+}
+
+QGroupBox#OfferBox::title,
+QGroupBox#LetterEditorBox::title,
+QGroupBox#LettersBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 6px;
+    color: #2563eb;
+    font-weight: 700;
+}
+
+/* Draft status badge */
+QLabel#DraftStatus {
+    background: #f1f5f9;
+    color: #0f172a;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+QLabel#DraftStatus[dirty="true"] {
+    background: #fff7ed;
+    border: 1px solid #fdba74;
+    color: #9a3412;
+}
+
+QLabel#DraftStatus[dirty="false"] {
+    background: #ecfdf5;
+    border: 1px solid #34d399;
+    color: #065f46;
+}
+
+/* Letter editor fields */
+QGroupBox#LetterEditorBox QTextEdit {
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    padding: 10px;
+    selection-background-color: #bfdbfe;
+}
+
+QGroupBox#LetterEditorBox QTextEdit:focus {
+    border: 1px solid #2563eb;
+}
+
+QGroupBox#LetterEditorBox QLabel {
+    font-weight: 600;
+    color: #0f172a;
+}
+
+QScrollArea#LettersScroll {
+    background: transparent;
+}
+
+QScrollArea#LettersScroll QWidget {
+    background: transparent;
 }
 
 /* Letter cards (page Détail) */
