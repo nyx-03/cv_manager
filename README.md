@@ -23,6 +23,10 @@
 - Page **Paramètres** centralisant le profil candidat
 - Sidebar de navigation unifiée
 - Import initial d’offres depuis une **URL** (Jobup – extraction progressive)
+- Refonte de la vue détail d’offre avec édition de lettre intégrée
+- Personnalisation fine des lettres (sections modifiables avant génération)
+- Génération et édition de lettres directement depuis la vue offre
+- Gestion améliorée des cartes (offres / lettres) avec interactions claires
 
 ### 🔧 Améliorations techniques
 
@@ -30,6 +34,10 @@
 - Centralisation de la logique métier (offers, candidatures, letters, profile)
 - Navigation basée sur `QStackedLayout`
 - Refonte complète du style **QSS** (clair, lisible, professionnel)
+- Amélioration du moteur de génération de lettres (séparation données / template)
+- Correction et sécurisation des templates Jinja2
+- Meilleure gestion des événements UI (clics cartes vs boutons)
+- Nettoyage et stabilisation de `main_window` et des pages associées
 
 ### 🐛 Correctifs notables
 
@@ -37,6 +45,9 @@
 - Résolution des problèmes de rendu des templates de lettres
 - Correction des imports PySide6 et des comportements de sélection Qt
 - Stabilisation de la base SQLite / SQLAlchemy
+- Correction des erreurs de rendu Jinja2
+- Correction des comportements inattendus lors de l’édition des lettres
+- Amélioration de la cohérence UI/QSS sur les pages de détail
 
 ➡️ Voir le détail complet dans le fichier [`CHANGELOG.md`](CHANGELOG.md).
 

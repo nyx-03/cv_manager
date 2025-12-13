@@ -24,4 +24,6 @@ temp/
 cache/
 
 generated
+generated_letters
 imports_debug
+data
