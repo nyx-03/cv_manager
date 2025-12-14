@@ -27,6 +27,17 @@ USER_AGENT = (
 
 TIMEOUT = 10
 
+# --- Shared requests session and headers for robustness ---
+SESSION = requests.Session()
+DEFAULT_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Upgrade-Insecure-Requests": "1",
+}
+
 
 class UrlImportError(Exception):
     pass
@@ -56,20 +67,27 @@ def import_offer_from_url(url: str) -> Dict[str, str]:
 
     html, final_url = _fetch_html(url)
 
-    # Si la page ressemble à une liste/shell JS sur des domaines connus, on tentera Playwright
-    if HAS_PLAYWRIGHT and _domain_prefers_browser(final_url or url):
-        try:
-            parsed_probe = BeautifulSoup(html, "html.parser")
-            probe_data: Dict[str, str] = {"_has_jobposting": False}
-            _extract_opengraph(parsed_probe, probe_data)
-            _extract_json_ld_jobposting(parsed_probe, probe_data)
-            if not probe_data.get("_has_jobposting") and _looks_like_listing_or_shell(parsed_probe, probe_data):
-                html, final_url = _fetch_html_playwright(url)
-        except Exception:
-            # On garde la version requests si Playwright échoue
-            pass
+    # First try with requests
+    try:
+        data = _parse_offer_html(html=html, url=url, final_url=final_url)
+    except UrlImportError as exc:
+        # For Jobup detail URLs, requests may return a SEO/listing shell.
+        if HAS_PLAYWRIGHT and _domain_is_jobup(urlparse(final_url or url).netloc) and _is_probable_detail_url(final_url or url):
+            html, final_url = _fetch_html_playwright(url)
+            return _parse_offer_html(html=html, url=url, final_url=final_url)
+        raise
 
-    return _parse_offer_html(html=html, url=url, final_url=final_url)
+    # If it looks like a Jobup detail URL but we still didn't get detail data, retry with Playwright.
+    if HAS_PLAYWRIGHT and _domain_is_jobup(data.get("source_site", "")) and _is_probable_detail_url(data.get("source_url", "") or url):
+        if (not data.get("_has_detail")) and (not data.get("_has_jobposting")):
+            try:
+                html, final_url = _fetch_html_playwright(url)
+                return _parse_offer_html(html=html, url=url, final_url=final_url)
+            except Exception:
+                # Keep the requests result if browser fetch fails
+                return data
+
+    return data
 
 
 def import_offer_from_url_browser(url: str) -> Dict[str, str]:
@@ -174,20 +192,69 @@ def _parse_offer_html(*, html: str, url: str, final_url: str) -> Dict[str, str]:
 # Fetch
 # ---------------------------------------------------------------------
 
+# ---------------------------------------------------------------------
+# Fetch
+# ---------------------------------------------------------------------
+
 def _fetch_html(url: str) -> tuple[str, str]:
+    """Fetch HTML with a shared session.
+
+    Some job boards intermittently block/slow down requests. We retry a bit and
+    surface a clearer message so the UI can propose the Playwright fallback.
+    """
+    last_exc: Exception | None = None
+
+    for attempt in range(3):
+        try:
+            resp = SESSION.get(
+                url,
+                headers=DEFAULT_HEADERS,
+                timeout=TIMEOUT,
+                allow_redirects=True,
+            )
+
+            # Common soft-block codes on job boards
+            if resp.status_code in {403, 429}:
+                raise UrlImportError(
+                    f"Accès bloqué (HTTP {resp.status_code}). "
+                    "Le site peut nécessiter un navigateur (JavaScript / anti-bot). "
+                    "Essaie le mode navigateur."
+                )
+
+            resp.raise_for_status()
+
+            if not resp.encoding:
+                resp.encoding = resp.apparent_encoding
+
+            return resp.text, str(resp.url)
+        except UrlImportError as exc:
+            # Already a user-friendly message
+            raise
+        except Exception as exc:
+            last_exc = exc
+            # Tiny backoff (no sleep import: keep it simple)
+            continue
+
+    raise UrlImportError(f"Impossible de récupérer la page: {last_exc}")
+
+
+# --- Jobup-specific helpers ---
+
+def _is_probable_detail_url(url: str) -> bool:
+    if not url:
+        return False
     try:
-        resp = requests.get(
-            url,
-            headers={
-                "User-Agent": USER_AGENT,
-                "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
-            },
-            timeout=TIMEOUT,
-        )
-        resp.raise_for_status()
-        return resp.text, str(resp.url)
-    except Exception as exc:
-        raise UrlImportError(f"Impossible de récupérer la page: {exc}")
+        p = urlparse(url)
+    except Exception:
+        return False
+    path = (p.path or "").lower()
+    # Common patterns across job boards
+    if "/detail/" in path or "/job/" in path or "/jobs/" in path:
+        return True
+    # Jobup detail URLs are typically /fr/emplois/detail/<uuid>/
+    if "emplois" in path and "detail" in path:
+        return True
+    return False
 
 
 def _fetch_html_playwright(url: str) -> tuple[str, str]:
@@ -305,138 +372,160 @@ def _domain_prefers_browser(url: str) -> bool:
 
 def _domain_is_jobup(source_site: str) -> bool:
     host = (source_site or "").lower().replace("www.", "")
+    # allow passing a netloc directly
+    host = host.split(":")[0]
     return host == "jobup.ch"
 
 
 def _extract_jobup_detail_from_page(soup: BeautifulSoup, data: Dict[str, str]) -> None:
     """Tente d'extraire le détail d'annonce Jobup depuis le HTML rendu.
 
-    Objectif: éviter les faux positifs (page liste/SEO) et remplir correctement:
-    - titre_poste
-    - entreprise
-    - localisation
-    - type_contrat
-    - texte_annonce
-
-    Stratégie:
-    1) On cherche le bloc texte qui contient "Détails de l'annonce d'emploi".
-    2) On s'appuie d'abord sur la section "Infos sur l'emploi" (Lieu/Contrat/...) qui apparaît sur la page détail.
-    3) On extrait ensuite un header court avant cette section et on le nettoie (CTA, doublons).
+    Problème rencontré: Jobup peut servir une page qui contient une liste + le détail,
+    et le texte aplati mélange tout. Ici on:
+    - repère le bloc "Détails de l'annonce d'emploi" (en prenant la DERNIÈRE occurrence)
+    - travaille sur un sous-texte borné jusqu'aux marqueurs de fin (Catégories / À propos / etc.)
+    - extrait les champs de façon robuste par regex et par lignes.
     """
 
-    full_text = soup.get_text(" ", strip=True)
     marker = "Détails de l'annonce d'emploi"
-    idx = full_text.find(marker)
-    if idx == -1:
+
+    # 1) Trouver la dernière occurrence du marker (souvent celle du détail)
+    candidates = []
+    for tag in soup.find_all(["h1", "h2", "h3", "h4", "p", "span", "div", "section", "main", "article"]):
+        txt = tag.get_text(" ", strip=True)
+        if txt and marker in txt:
+            candidates.append(tag)
+
+    if not candidates:
         return
 
-    detail = full_text[idx:]
+    marker_node = candidates[-1]
 
-    # Si la section "Infos sur l'emploi" n'est pas présente, c'est souvent une page liste.
+    # 2) Monter à un conteneur assez large
+    container = (
+        marker_node.find_parent(["main", "article", "section"])
+        or marker_node.find_parent("div")
+        or marker_node
+    )
+
+    # Texte multi-lignes pour faciliter l'extraction
+    text = container.get_text("\n", strip=True)
+
+    # 3) Borne le texte à partir du marker
+    idx = text.find(marker)
+    if idx == -1:
+        return
+    detail = text[idx:]
+
+    # 4) Si "Infos sur l'emploi" n'est pas présent, ce n'est pas un détail fiable
     if "Infos sur l'emploi" not in detail:
         return
 
-    # --- Champs structurés depuis la section "Infos sur l'emploi" ---
-    if not data.get("type_contrat"):
-        m = re.search(r"Type de contrat\s*:\s*([^\n\r]+?)(?:\s+Lieu de travail\s*:|\s+Taux d'activité\s*:|\s+Nous recherchons|\s+Missions|\s+Profil|\s+Conditions|\s+À propos)", detail)
-        if m:
-            data["type_contrat"] = m.group(1).strip()
+    # 5) Couper aux sections de fin typiques
+    end_markers = [
+        "Catégories:",
+        "À propos de l'entreprise",
+        "À propos de l’entreprise",
+        "Voir le profil de l’entreprise",
+        "Voir le profil de l'entreprise",
+        "Signaler cette offre",
+        "Signaler cette offre d'emploi",
+        "Ouvrir dans un nouvel onglet",
+    ]
+    for mk in end_markers:
+        if mk in detail:
+            detail = detail.split(mk, 1)[0]
+            break
 
-    if not data.get("localisation"):
-        m = re.search(r"Lieu de travail\s*:\s*([^\n\r]+?)(?:\s+Taux d'activité\s*:|\s+Type de contrat\s*:|\s+Nous recherchons|\s+Missions|\s+Profil|\s+Conditions|\s+À propos)", detail)
-        if m:
-            data["localisation"] = m.group(1).strip()
+    # Normalise
+    detail = re.sub(r"\r", "", detail)
+    detail = re.sub(r"\n{2,}", "\n", detail).strip()
 
-    # --- Header: on prend le texte entre le marker et "Infos sur l'emploi" ---
-    header = detail.split("Infos sur l'emploi", 1)[0]
-    if header.startswith(marker):
-        header = header[len(marker):].strip()
+    # 6) Extraire les KV (Infos sur l'emploi)
+    def _kv(label: str) -> str:
+        # Capture "Label : value" jusqu'au prochain label connu
+        pattern = rf"{re.escape(label)}\s*:\s*(.+?)(?=\n(?:Date de publication|Taux d'activité|Type de contrat|Lieu de travail)\s*:|\n(?:Nous recherchons|Missions|Profil|Conditions|À propos)|\Z)"
+        m = re.search(pattern, detail, flags=re.IGNORECASE | re.DOTALL)
+        if not m:
+            return ""
+        return re.sub(r"\s+", " ", m.group(1)).strip()
 
-    # Nettoyage: CTA / badges
-    header = re.sub(r"\b(Postuler|Sauvegarder|Signaler cette offre d'emploi|Ouvrir dans un nouvel onglet)\b", " ", header)
-    header = re.sub(r"\b(Candidature simplifiée|Nouveau|Mis en avant)\b", " ", header)
-    header = re.sub(r"\s{2,}", " ", header).strip()
+    loc = _kv("Lieu de travail")
+    contrat = _kv("Type de contrat")
 
-    # Le header peut contenir des doublons (titre+entreprise répétés). On essaye de réduire.
-    # On garde uniquement les ~30 premiers mots (avant que ça parte en SEO ou navigation).
-    words = header.split()
-    header_short = " ".join(words[:30]).strip()
+    if loc and not data.get("localisation"):
+        data["localisation"] = loc
+    if contrat and not data.get("type_contrat"):
+        data["type_contrat"] = contrat
 
-    # Heuristique entreprise (suffixes courants). On capture la dernière occurrence plausible.
-    company = data.get("entreprise", "") or ""
-    title = data.get("titre_poste", "") or ""
+    # 7) Header (Titre + Entreprise) = lignes entre marker et "Infos sur l'emploi"
+    header_block = detail.split("Infos sur l'emploi", 1)[0]
+    header_block = header_block.replace(marker, " ")
+    header_block = re.sub(
+        r"\b(Postuler|Sauvegarder|Candidature simplifiée|Nouveau|Mis en avant)\b",
+        " ",
+        header_block,
+        flags=re.IGNORECASE,
+    )
+    header_block = re.sub(r"\s{2,}", " ", header_block).strip()
 
-    # Liste de suffixes typiques pour entreprises suisses/intl.
-    suffixes = r"(?:SA|AG|Sàrl|SARL|GmbH|Ltd|Inc|LLC|Co\.|S\.A\.|S\.A)"
+    # Découpe en lignes (en conservant un fallback sur les mots)
+    raw_lines = [ln.strip() for ln in header_block.split("\n") if ln.strip()]
+    if not raw_lines:
+        raw_lines = [" ".join(header_block.split()[:20]).strip()] if header_block else []
 
-    m_company = re.search(rf"(.+?)\b({suffixes})\b", header_short, flags=re.IGNORECASE)
-    if m_company:
-        # Entreprise = groupe(1)+suffixe, titre = avant l'entreprise
-        company_candidate = (m_company.group(1).strip() + " " + m_company.group(2).strip()).strip()
-        before = header_short[: m_company.start()].strip()
-        # Si le "before" est vide, on ne force pas le titre.
-        if company_candidate and not company:
-            company = company_candidate
-        if before and not title:
-            title = before
+    # Nettoyage SEO
+    def _is_seo(s: str) -> bool:
+        s2 = s.lower()
+        return ("offres d'emploi" in s2) or ("catégorie" in s2) or ("trouvées sur jobup" in s2)
 
-    # Fallback: si pas de suffixe, on tente de prendre le dernier bloc "Ville de ..." / "Fondation ..." etc.
-    if not company:
-        m2 = re.search(r"\b(Ville de|Canton de|Fondation|Association|Groupe)\b.*$", header_short)
-        if m2:
-            company = header_short[m2.start():].strip()
-            if not title:
-                title = header_short[: m2.start()].strip()
+    # Sur Jobup, la première ligne utile est souvent le titre
+    title_candidate = ""
+    company_candidate = ""
 
-    # Fallback final: si on n'a rien, on utilise la première ligne plausible.
-    if not title:
-        # On évite les titres SEO
-        candidate = header_short
-        if candidate and ("offres d'emploi" not in candidate.lower()):
-            title = candidate
+    for ln in raw_lines:
+        if not title_candidate and not _is_seo(ln):
+            title_candidate = ln
+            continue
+        if title_candidate and not company_candidate and not _is_seo(ln):
+            # évite d'attraper la ville comme "entreprise"
+            if not re.search(r"\b(Genève|Lausanne|Renens|Neuchâtel|Zürich|Basel|Bern|Bienne|Sion)\b", ln, flags=re.IGNORECASE):
+                company_candidate = ln
+            break
 
-    # Nettoyage des titres anormaux (souvent issus de la page liste)
-    if title and ("offres d'emploi" in title.lower() or "catégorie" in title.lower()):
-        title = ""
+    # Si le titre contient déjà "Entreprise" collé, on essaie de séparer.
+    if title_candidate and not company_candidate:
+        # Pattern: "TITRE ... Entreprise ..." (souvent dans les dumps)
+        parts = re.split(r"\s{2,}|\s+-\s+", title_candidate)
+        if len(parts) >= 2:
+            title_candidate = parts[0].strip()
 
-    if title and not data.get("titre_poste"):
-        data["titre_poste"] = title
-    elif title:
-        data["titre_poste"] = title
+    if title_candidate and not _is_seo(title_candidate):
+        data["titre_poste"] = title_candidate
 
-    if company and not data.get("entreprise"):
-        data["entreprise"] = company
+    if company_candidate and not data.get("entreprise"):
+        data["entreprise"] = company_candidate
 
-    # --- Description: prendre le bloc après "Lieu de travail" et avant "À propos" ---
+    # 8) Description: texte après les KV, en retirant les lignes KV elles-mêmes
     if not data.get("texte_annonce"):
-        m_desc = re.search(r"Lieu de travail\s*:\s*[^\n\r]+\s+(.*)", detail)
-        if m_desc:
-            desc = m_desc.group(1)
-            end_markers = [
-                "À propos de l'entreprise",
-                "À propos de l’entreprise",
-                "Catégories:",
-                "Ouvrir dans un nouvel onglet",
-                "Signaler cette offre",
-            ]
-            for mk in end_markers:
-                if mk in desc:
-                    desc = desc.split(mk, 1)[0]
-                    break
+        # On prend tout après "Lieu de travail" (dans le bloc détail) puis on nettoie.
+        m_desc = re.search(r"Lieu de travail\s*:\s*.*?\n(.*)", detail, flags=re.IGNORECASE | re.DOTALL)
+        desc_text = m_desc.group(1).strip() if m_desc else ""
 
-            # Nettoyage des répétitions de champs "Infos sur l'emploi" dans le texte
-            desc = re.sub(r"\b(Date de publication\s*:\s*[^\n\r]+)\b", " ", desc)
-            desc = re.sub(r"\b(Taux d'activité\s*:\s*[^\n\r]+)\b", " ", desc)
-            desc = re.sub(r"\b(Type de contrat\s*:\s*[^\n\r]+)\b", " ", desc)
-            desc = re.sub(r"\b(Lieu de travail\s*:\s*[^\n\r]+)\b", " ", desc)
+        # Retire les lignes infos répétées
+        desc_text = re.sub(r"\n(Date de publication|Taux d'activité|Type de contrat|Lieu de travail)\s*:\s*.*", " ", desc_text, flags=re.IGNORECASE)
 
-            desc = re.sub(r"\s{2,}", " ", desc).strip()
-            if len(desc) > 200:
-                data["texte_annonce"] = desc[:8000]
+        # Retire CTA résiduels
+        desc_text = re.sub(r"\b(Postuler|Sauvegarder|Candidature simplifiée|Nouveau|Mis en avant)\b", " ", desc_text, flags=re.IGNORECASE)
 
-    # Marqueur: si on a une description correcte et un titre plausible, on considère qu'on est sur une page détail.
-    titre = (data.get("titre_poste") or "").lower()
-    if data.get("texte_annonce") and titre and ("offres d'emploi" not in titre):
+        desc_text = re.sub(r"\s{2,}", " ", desc_text).strip()
+
+        if len(desc_text) > 200:
+            data["texte_annonce"] = desc_text[:8000]
+
+    # 9) Marqueur de détail fiable
+    titre = (data.get("titre_poste") or "").strip().lower()
+    if data.get("texte_annonce") and len(data.get("texte_annonce", "")) > 200 and titre and ("offres d'emploi" not in titre):
         data["_has_detail"] = True
 
 

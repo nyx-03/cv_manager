@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from models import Offre
+from services import url_import_service
 from services.url_import_service import (
     UrlImportError,
     import_offer_from_url,
@@ -43,6 +44,8 @@ class OfferFormPage(QWidget):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.current_offer: Optional[Offre] = None
+        self._busy_restore_prefill: Optional[bool] = None
+        self._busy_restore_browser: Optional[bool] = None
 
         self._create_widgets()
         self._create_layouts()
@@ -73,7 +76,7 @@ class OfferFormPage(QWidget):
         self.btn_save.setText("Créer l'offre")
         # UX: re-enable prefill buttons
         self.btn_prefill.setEnabled(True)
-        self.btn_prefill_browser.setEnabled(True)
+        self.btn_prefill_browser.setEnabled(self._has_playwright)
         # UX: auto-focus the title field
         self.input_title.setFocus()
 
@@ -81,6 +84,8 @@ class OfferFormPage(QWidget):
         self.current_offer = offre
         self.btn_prefill.setEnabled(False)
         self.btn_prefill_browser.setEnabled(False)
+        if not self._has_playwright:
+            self.btn_prefill_browser.setEnabled(False)
 
         self.input_url.setText(getattr(offre, "url", "") or "")
         self.input_title.setText(getattr(offre, "titre_poste", "") or "")
@@ -180,6 +185,18 @@ class OfferFormPage(QWidget):
 
         self.btn_prefill_browser = QPushButton("Pré-remplir (navigateur)")
         self.btn_prefill_browser.setObjectName("secondaryButton")
+        # Playwright est optionnel: si absent, on désactive le bouton navigateur et on explique pourquoi.
+        self._has_playwright = bool(getattr(url_import_service, "HAS_PLAYWRIGHT", False))
+        if not self._has_playwright:
+            self.btn_prefill_browser.setEnabled(False)
+            self.btn_prefill_browser.setToolTip(
+                "Mode navigateur indisponible (Playwright non installé).\n"
+                "Installe: pip install playwright puis playwright install chromium"
+            )
+        else:
+            self.btn_prefill_browser.setToolTip(
+                "Utilise un navigateur headless pour les sites qui chargent en JavaScript (ex: Jobup)."
+            )
 
         self.btn_open_url = QPushButton("Ouvrir l'URL")
         self.btn_open_url.setObjectName("secondaryButton")
@@ -258,11 +275,32 @@ class OfferFormPage(QWidget):
     # ---------------------------------------------------------------------
 
     def _set_busy(self, busy: bool, label: str = "") -> None:
-        # Disable actions during import / save to avoid double clicks.
-        self.btn_prefill.setEnabled(not busy and self.btn_prefill.isEnabled())
-        self.btn_prefill_browser.setEnabled(not busy and self.btn_prefill_browser.isEnabled())
-        self.btn_open_url.setEnabled(not busy)
-        self.btn_save.setEnabled(not busy)
+        """Met la page en mode "occupé" (import / save) en évitant les double-clics.
+
+        Important: on restaure l'état précédent des boutons après l'opération.
+        """
+        if busy:
+            if self._busy_restore_prefill is None:
+                self._busy_restore_prefill = self.btn_prefill.isEnabled()
+            if self._busy_restore_browser is None:
+                self._busy_restore_browser = self.btn_prefill_browser.isEnabled()
+
+            self.btn_prefill.setEnabled(False)
+            self.btn_prefill_browser.setEnabled(False)
+            self.btn_open_url.setEnabled(False)
+            self.btn_save.setEnabled(False)
+        else:
+            if self._busy_restore_prefill is not None:
+                self.btn_prefill.setEnabled(self._busy_restore_prefill)
+            if self._busy_restore_browser is not None:
+                self.btn_prefill_browser.setEnabled(self._busy_restore_browser)
+
+            self._busy_restore_prefill = None
+            self._busy_restore_browser = None
+
+            self.btn_open_url.setEnabled(True)
+            self.btn_save.setEnabled(True)
+
         if label:
             self._set_info_message(label, kind="info")
 
@@ -307,12 +345,36 @@ class OfferFormPage(QWidget):
             self._set_info_message("Renseigne une URL avant de pré-remplir.", kind="error")
             return
 
+        if not (url.startswith("http://") or url.startswith("https://")):
+            url = "https://" + url
+            self.input_url.setText(url)
+
         self._set_busy(True, "Import en cours...")
         try:
             data = import_offer_from_url(url)
         except UrlImportError as e:
             msg = str(e)
             self.set_import_error(msg)
+
+            if self._has_playwright and (
+                "page 'détail d'annonce'" in msg
+                or "page SEO" in msg
+                or "JavaScript" in msg
+                or "mode navigateur" in msg
+            ):
+                box = QMessageBox(self)
+                box.setIcon(QMessageBox.Warning)
+                box.setWindowTitle("Import URL")
+                box.setText("Import requests insuffisant pour cette page.")
+                box.setInformativeText("Veux-tu réessayer automatiquement via le mode navigateur (Playwright) ?")
+                btn_retry = box.addButton("Réessayer (navigateur)", QMessageBox.AcceptRole)
+                box.addButton("Annuler", QMessageBox.RejectRole)
+                box.exec()
+                if box.clickedButton() == btn_retry:
+                    self._set_busy(False)
+                    self._on_prefill_browser()
+                    return
+
             self._maybe_offer_dump_open(msg)
             self._set_busy(False)
             return
@@ -329,6 +391,18 @@ class OfferFormPage(QWidget):
         if not url:
             self._set_info_message("Renseigne une URL avant de pré-remplir.", kind="error")
             return
+
+        if not self._has_playwright:
+            self._set_info_message(
+                "Mode navigateur indisponible: Playwright n'est pas installé.\n"
+                "Installe: pip install playwright puis playwright install chromium",
+                kind="error",
+            )
+            return
+
+        if not (url.startswith("http://") or url.startswith("https://")):
+            url = "https://" + url
+            self.input_url.setText(url)
 
         self._set_busy(True, "Import navigateur en cours...")
         try:
@@ -447,27 +521,19 @@ class OfferFormPage(QWidget):
         if box.clickedButton() == btn_open:
             QDesktopServices.openUrl(QUrl.fromLocalFile(dump_path))
 
-    def _extract_dump_path_from_error(self, msg: str) -> Optional[str]:
-        # Le service écrit généralement "Dump: /path/to/file.txt"
-        marker = "Dump:"
-        if marker not in msg:
-            return None
-        path = msg.split(marker, 1)[1].strip()
-        return path if path else None
 
     def _get_session(self):
-        # Remonte les parents pour trouver un attribut `.session`
-        w: Optional[object] = self
-        for _ in range(8):
-            if w is None:
-                break
-            if hasattr(w, "session"):
-                return getattr(w, "session")
+        """Récupère la session SQLAlchemy en remontant la hiérarchie des parents.
+
+        On cherche un attribut `.session` sur le parent, grand-parent, etc.
+        Cela permet à cette page d'être utilisée dans différents conteneurs (ApplicationView/MainWindow).
+        """
+        w = self
+        # Remonte la chaîne des parents QWidget
+        while w is not None:
+            sess = getattr(w, "session", None)
+            if sess is not None:
+                return sess
             w = w.parent()  # type: ignore[assignment]
         return None
 
-
-class QObjectLike:
-    # Petite aide typée pour `.parent()`
-    def parent(self):
-        raise NotImplementedError
