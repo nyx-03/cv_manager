@@ -772,3 +772,37 @@ QLabel#SettingsStatusLabel {
     padding: 6px 10px;
     font-weight: 500;
 }
+
+/* Message d'information/erreur dans les formulaires (OfferFormPage, etc.) */
+QLabel#formInfo {
+    background: #ffffff;
+    color: #334155;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-weight: 600;
+}
+
+QLabel#formInfo[kind="info"] {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #93c5fd;
+}
+
+QLabel#formInfo[kind="success"] {
+    background: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #34d399;
+}
+
+QLabel#formInfo[kind="warning"] {
+    background: #fff7ed;
+    color: #9a3412;
+    border: 1px solid #fdba74;
+}
+
+QLabel#formInfo[kind="error"] {
+    background: #fef2f2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+}
