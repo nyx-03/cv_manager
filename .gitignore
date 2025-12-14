@@ -23,7 +23,13 @@ tmp/
 temp/
 cache/
 
-generated
-generated_letters
-imports_debug
-data
+generated/
+generated_letters/
+imports_debug/
+data/
+
+# Database
+*.sqlite
+*.sqlite3
+data/*.sqlite
+data/*.sqlite3
