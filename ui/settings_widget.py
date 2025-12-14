@@ -10,8 +10,18 @@ from PySide6.QtWidgets import (
     QComboBox,
     QSpinBox,
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QTextEdit
+from services.profile_service import ensure_profile, update_profile, ProfileUpdateData
+
+# Templates management
+from services.letters_service import (
+    ensure_user_templates_dir,
+    list_user_templates,
+    import_user_template,
+    validate_template_file,
+)
 from services.profile_service import ensure_profile, update_profile, ProfileUpdateData
 
 
@@ -25,6 +35,8 @@ class SettingsWidget(QWidget):
     def __init__(self, session=None, parent=None):
         super().__init__(parent)
         self.session = session
+        self._templates: list[str] = []
+        self._default_template: str = ""
 
         self._setup_ui()
         self.load_settings()
@@ -168,6 +180,66 @@ class SettingsWidget(QWidget):
 
         root_layout.addWidget(paths_card)
 
+        # --- Card : Templates (Jinja2) ---
+        templates_card = QFrame(self)
+        templates_card.setObjectName("Card")
+        templates_layout = QVBoxLayout(templates_card)
+        templates_layout.setContentsMargins(12, 12, 12, 12)
+        templates_layout.setSpacing(8)
+
+        templates_title = QLabel("Templates de lettres")
+        templates_title.setProperty("heading", True)
+        templates_layout.addWidget(templates_title)
+
+        templates_help = QLabel(
+            "Importe tes templates personnalisés (.j2 / .html.j2). Ils seront copiés dans data/templates et proposés lors de la génération."
+        )
+        templates_help.setWordWrap(True)
+        templates_help.setProperty("muted", True)
+        templates_layout.addWidget(templates_help)
+
+        row_tpl = QHBoxLayout()
+        label_tpl = QLabel("Template par défaut :")
+        self.combo_default_template = QComboBox()
+        self.combo_default_template.setMinimumWidth(280)
+        row_tpl.addWidget(label_tpl)
+        row_tpl.addWidget(self.combo_default_template, 1)
+        templates_layout.addLayout(row_tpl)
+
+        row_tpl_btns = QHBoxLayout()
+
+        self.btn_tpl_import = QPushButton("Importer")
+        self.btn_tpl_import.setObjectName("PrimaryButton")
+        self.btn_tpl_import.clicked.connect(self._on_import_template)
+        row_tpl_btns.addWidget(self.btn_tpl_import)
+
+        self.btn_tpl_delete = QPushButton("Supprimer")
+        self.btn_tpl_delete.setObjectName("SecondaryButton")
+        self.btn_tpl_delete.clicked.connect(self._on_delete_template)
+        row_tpl_btns.addWidget(self.btn_tpl_delete)
+
+        self.btn_tpl_open_dir = QPushButton("Ouvrir le dossier")
+        self.btn_tpl_open_dir.setObjectName("SecondaryButton")
+        self.btn_tpl_open_dir.clicked.connect(self._on_open_templates_dir)
+        row_tpl_btns.addWidget(self.btn_tpl_open_dir)
+
+        row_tpl_btns.addStretch(1)
+
+        self.btn_tpl_set_default = QPushButton("Définir comme défaut")
+        self.btn_tpl_set_default.setObjectName("SecondaryButton")
+        self.btn_tpl_set_default.clicked.connect(self._on_set_default_template)
+        row_tpl_btns.addWidget(self.btn_tpl_set_default)
+
+        templates_layout.addLayout(row_tpl_btns)
+
+        self.tpl_status = QLabel("")
+        self.tpl_status.setObjectName("formInfo")
+        self.tpl_status.setProperty("kind", "info")
+        self.tpl_status.setVisible(False)
+        templates_layout.addWidget(self.tpl_status)
+
+        root_layout.addWidget(templates_card)
+
         # --- Card : Préférences ---
         prefs_card = QFrame(self)
         prefs_card.setObjectName("Card")
@@ -261,6 +333,15 @@ class SettingsWidget(QWidget):
         self.input_github.setText(getattr(profil, "github", "") or "")
         self.input_portfolio.setText(getattr(profil, "portfolio", "") or "")
 
+        # Templates
+        # Lecture d'un éventuel template par défaut depuis le profil
+        self._default_template = ""
+        for field in ("template_lettre", "template_letter", "default_template", "default_letter_template"):
+            if hasattr(profil, field):
+                self._default_template = getattr(profil, field) or ""
+                break
+        self._refresh_templates()
+
         # Defaults for non-profile settings
         self.input_letters_dir.setText("")
         self.input_templates_dir.setText("")
@@ -300,3 +381,142 @@ class SettingsWidget(QWidget):
         self.status_label.setText(message)
         self.status_label.setVisible(True)
         QTimer.singleShot(duration_ms, lambda: self.status_label.setVisible(False))
+
+
+    # ---------------------------------------------------------
+    # Templates (Jinja2)
+    # ---------------------------------------------------------
+    def _refresh_templates(self):
+        """Recharge la liste des templates utilisateur et met à jour le combo."""
+        try:
+            ensure_user_templates_dir()
+            paths = list_user_templates()
+            self._templates = [p.name for p in paths]
+        except Exception as e:
+            self._templates = []
+            self._show_tpl_message(f"Impossible de charger les templates: {e}", kind="error")
+
+        current = self.combo_default_template.currentText().strip() if hasattr(self, "combo_default_template") else ""
+        self.combo_default_template.blockSignals(True)
+        self.combo_default_template.clear()
+        self.combo_default_template.addItem("(Aucun)")
+        for name in self._templates:
+            self.combo_default_template.addItem(name)
+        # Restaure la sélection
+        if self._default_template and self._default_template in self._templates:
+            self.combo_default_template.setCurrentText(self._default_template)
+        elif current and current in self._templates:
+            self.combo_default_template.setCurrentText(current)
+        else:
+            self.combo_default_template.setCurrentIndex(0)
+        self.combo_default_template.blockSignals(False)
+
+    def _show_tpl_message(self, message: str, *, kind: str = "info", duration_ms: int = 5000):
+        if not hasattr(self, "tpl_status"):
+            self._show_status_message(message, duration_ms=duration_ms)
+            return
+        self.tpl_status.setText(message)
+        self.tpl_status.setProperty("kind", kind)
+        self.tpl_status.style().unpolish(self.tpl_status)
+        self.tpl_status.style().polish(self.tpl_status)
+        self.tpl_status.setVisible(True)
+        QTimer.singleShot(duration_ms, lambda: self.tpl_status.setVisible(False))
+
+    def _on_open_templates_dir(self):
+        d = ensure_user_templates_dir()
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(d)))
+
+    def _on_import_template(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Importer un template",
+            "",
+            "Templates (*.j2 *.html *.html.j2);;Tous les fichiers (*)",
+        )
+        if not file_path:
+            return
+
+        try:
+            dest = import_user_template(file_path, overwrite=False)
+            # Validation plus stricte et message clair
+            try:
+                validate_template_file(dest)
+            except Exception as e:
+                self._show_tpl_message(f"Template importé mais invalide: {e}", kind="warning")
+            else:
+                self._show_tpl_message(f"Template importé: {dest.name}", kind="success")
+            self._refresh_templates()
+            # Sélectionne le nouveau template
+            if dest.name in self._templates:
+                self.combo_default_template.setCurrentText(dest.name)
+        except Exception as e:
+            self._show_tpl_message(str(e), kind="error")
+
+    def _selected_template_name(self) -> str:
+        if not hasattr(self, "combo_default_template"):
+            return ""
+        name = self.combo_default_template.currentText().strip()
+        if not name or name == "(Aucun)":
+            return ""
+        return name
+
+    def _on_delete_template(self):
+        name = self._selected_template_name()
+        if not name:
+            self._show_tpl_message("Aucun template sélectionné.", kind="warning")
+            return
+
+        # Suppression simple (sans popup pour rester minimal)
+        try:
+            p = ensure_user_templates_dir() / name
+            if p.exists():
+                p.unlink()
+            if self._default_template == name:
+                self._default_template = ""
+            self._refresh_templates()
+            self._show_tpl_message(f"Template supprimé: {name}", kind="success")
+        except Exception as e:
+            self._show_tpl_message(f"Impossible de supprimer: {e}", kind="error")
+
+    def _on_set_default_template(self):
+        """Définit le template par défaut.
+
+        Si le modèle ProfilCandidat a un champ compatible, on persiste.
+        Sinon, on conserve le choix côté UI (persistance à implémenter ensuite).
+        """
+        name = self._selected_template_name()
+        self._default_template = name
+
+        if not self._require_session():
+            self._show_tpl_message("Template par défaut défini (non persisté : pas de session DB).", kind="warning")
+            return
+
+        profil = ensure_profile(self.session)
+
+        # Champs possibles (on s'adapte au modèle)
+        candidate_fields = [
+            "template_lettre",
+            "template_letter",
+            "default_template",
+            "default_letter_template",
+        ]
+
+        saved = False
+        for field in candidate_fields:
+            if hasattr(profil, field):
+                setattr(profil, field, name)
+                try:
+                    self.session.commit()
+                    saved = True
+                except Exception:
+                    self.session.rollback()
+                    saved = False
+                break
+
+        if saved:
+            self._show_tpl_message("Template par défaut enregistré.", kind="success")
+        else:
+            self._show_tpl_message(
+                "Template par défaut défini, mais non persisté (champ manquant dans le modèle).",
+                kind="warning",
+            )

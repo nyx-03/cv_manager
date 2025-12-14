@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-from PySide6.QtCore import Qt, Signal, QSignalBlocker
+from PySide6.QtCore import Qt, Signal, QSignalBlocker, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QWidget,
     QLabel,
@@ -17,7 +18,11 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QFormLayout,
     QGroupBox,
+    QComboBox,
 )
+
+# Letters service helpers
+from services.letters_service import ensure_user_templates_dir, list_user_templates
 
 
 @dataclass(frozen=True)
@@ -125,6 +130,8 @@ class OfferDetailPage(QWidget):
     deleteOfferRequested = Signal(int)
     saveDraftRequested = Signal(dict)   # payload: paragraph fields
     generateLetterRequested = Signal()
+    # Nouveau (non-breaking): contient le nom du template sélectionné (ou "" pour défaut profil/app)
+    generateLetterRequestedWithTemplate = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -228,10 +235,10 @@ class OfferDetailPage(QWidget):
             txt.textChanged.connect(self._mark_draft_dirty)
             return txt
 
-        self.ed_intro = _mk_field("Présente-toi en 2–3 phrases et annonce ton intérêt pour Vitol.")
+        self.ed_intro = _mk_field("Présente-toi en 2–3 phrases et annonce ton intérêt pour l’entreprise.")
         self.ed_exp1 = _mk_field("Expérience 1 : projet / techno / impact métier / résultats mesurables.")
         self.ed_exp2 = _mk_field("Expérience 2 : autonomie, delivery, qualité, CI/CD, performance, etc.")
-        self.ed_poste = _mk_field("Explique pourquoi ce poste (Python + C# + React) te correspond et comment tu vas apporter de la valeur.")
+        self.ed_poste = _mk_field("Explique pourquoi ce poste te correspond (stack, contexte) et comment tu vas apporter de la valeur.")
         self.ed_personnalite = _mk_field("Soft skills : rigueur, sens business, communication, autonomie, esprit d'équipe…")
         self.ed_conclusion = _mk_field("Conclusion courte : motivation + disponibilité + proposition d'échange.", min_h=70)
 
@@ -243,6 +250,31 @@ class OfferDetailPage(QWidget):
         form.addRow("Conclusion", self.ed_conclusion)
 
         editor_layout.addLayout(form)
+
+        # Template selector (optionnel)
+        tpl_row = QHBoxLayout()
+        tpl_row.setSpacing(10)
+
+        lbl_tpl = QLabel("Template :")
+        lbl_tpl.setObjectName("FormLabel")
+        tpl_row.addWidget(lbl_tpl)
+
+        self.combo_template = QComboBox()
+        self.combo_template.setObjectName("TemplateCombo")
+        self.combo_template.setMinimumWidth(260)
+        tpl_row.addWidget(self.combo_template, 1)
+
+        self.btn_tpl_refresh = QPushButton("Rafraîchir")
+        self.btn_tpl_refresh.setObjectName("SecondaryButton")
+        self.btn_tpl_refresh.clicked.connect(self.refresh_templates)
+        tpl_row.addWidget(self.btn_tpl_refresh)
+
+        self.btn_tpl_open_dir = QPushButton("Dossier")
+        self.btn_tpl_open_dir.setObjectName("SecondaryButton")
+        self.btn_tpl_open_dir.clicked.connect(self._open_templates_dir)
+        tpl_row.addWidget(self.btn_tpl_open_dir)
+
+        editor_layout.addLayout(tpl_row)
 
         # Actions bar
         actions = QHBoxLayout()
@@ -257,7 +289,7 @@ class OfferDetailPage(QWidget):
         self.btn_generate = QPushButton("Générer HTML")
         self.btn_generate.setObjectName("SecondaryButton")
         self.btn_generate.setToolTip("Génère la lettre HTML à partir du brouillon")
-        self.btn_generate.clicked.connect(self.generateLetterRequested.emit)
+        self.btn_generate.clicked.connect(self._on_generate_clicked)
         actions.addWidget(self.btn_generate)
 
         editor_layout.addLayout(actions)
@@ -299,6 +331,9 @@ class OfferDetailPage(QWidget):
 
         # Default tab
         self.tabs.setCurrentIndex(1)
+
+        # Init template list
+        self.refresh_templates()
 
     # ---------------------------
     # Public API
@@ -400,11 +435,41 @@ class OfferDetailPage(QWidget):
         self._set_draft_status("Brouillon (modifié)", dirty=True)
 
     def _clear_layout(self, layout: QVBoxLayout) -> None:
+        """Supprime proprement tous les items d'un layout (widgets, spacers, sous-layouts)."""
         while layout.count():
             item = layout.takeAt(0)
+            if item is None:
+                continue
+
             w = item.widget()
             if w is not None:
+                w.setParent(None)
                 w.deleteLater()
+                continue
+
+            child_layout = item.layout()
+            if child_layout is not None:
+                # Récursif
+                while child_layout.count():
+                    sub = child_layout.takeAt(0)
+                    if sub is None:
+                        continue
+                    sw = sub.widget()
+                    if sw is not None:
+                        sw.setParent(None)
+                        sw.deleteLater()
+                    elif sub.layout() is not None:
+                        # nettoyage récursif simple
+                        try:
+                            self._clear_layout(sub.layout())  # type: ignore
+                        except Exception:
+                            pass
+                child_layout.setParent(None)
+                continue
+
+            # spacer item: rien à faire
+            _ = item
+
 
     def _emit_save_draft(self):
         payload = {
@@ -417,3 +482,59 @@ class OfferDetailPage(QWidget):
         }
         self.saveDraftRequested.emit(payload)
         self._set_draft_status("Brouillon (enregistré)", dirty=False)
+
+
+    # ---------------------------
+    # Templates
+    # ---------------------------
+
+    def refresh_templates(self):
+        """Recharge les templates utilisateur (data/templates) dans le combo."""
+        if not hasattr(self, "combo_template"):
+            return
+
+        current = self.combo_template.currentText().strip()
+        self.combo_template.blockSignals(True)
+        self.combo_template.clear()
+        # "" = laisse le service choisir (profil/app)
+        self.combo_template.addItem("(Défaut — profil/app)")
+
+        try:
+            ensure_user_templates_dir()
+            tpl_paths = list_user_templates()
+            for p in tpl_paths:
+                self.combo_template.addItem(p.name)
+        except Exception:
+            # Pas bloquant
+            pass
+
+        # Restore selection
+        if current and current != "(Défaut — profil/app)":
+            idx = self.combo_template.findText(current)
+            if idx >= 0:
+                self.combo_template.setCurrentIndex(idx)
+
+        self.combo_template.blockSignals(False)
+
+    def _selected_template_name(self) -> str:
+        if not hasattr(self, "combo_template"):
+            return ""
+        name = self.combo_template.currentText().strip()
+        if not name or name == "(Défaut — profil/app)":
+            return ""
+        return name
+
+    def _open_templates_dir(self):
+        try:
+            d = ensure_user_templates_dir()
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(d)))
+        except Exception:
+            return
+
+    def _on_generate_clicked(self):
+        """Émet la demande de génération en incluant le template choisi."""
+        tpl = self._selected_template_name()
+        # Non-breaking: on garde l'ancien signal (listeners existants)
+        self.generateLetterRequested.emit()
+        # Nouveau signal avec info template
+        self.generateLetterRequestedWithTemplate.emit(tpl)

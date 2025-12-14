@@ -34,7 +34,7 @@ from services.candidatures_service import (
     CandidatureCreateData,
 )
 from services.profile_service import ensure_profile
-from services.letters_service import generate_letter_html, get_default_letter_template_path
+from services.letters_service import generate_letter_html
 
 from models import Offre, Candidature, CandidatureStatut, LettreMotivation, LettreStatut
 
@@ -122,6 +122,8 @@ class MainWindow(QMainWindow):
             page.saveDraftRequested.connect(self.on_save_letter_draft)  # type: ignore
         if hasattr(page, "generateLetterRequested"):
             page.generateLetterRequested.connect(self.on_generate_letter_from_editor)  # type: ignore
+        if hasattr(page, "generateLetterRequestedWithTemplate"):
+            page.generateLetterRequestedWithTemplate.connect(self.on_generate_letter_from_editor_with_template)  # type: ignore
 
         self._offer_detail_editor_wired = True
 
@@ -269,16 +271,19 @@ class MainWindow(QMainWindow):
         except Exception:
             # Fallback: switch to offers page
             self.view.set_page(PAGE_OFFERS)
+
     def _get_selected_offer(self) -> Offre | None:
         return self.current_offer
 
     def _get_letter_template_path(self) -> Path:
-        """Retourne le chemin du template HTML utilisé pour générer les lettres.
+        """Retourne un chemin de template HTML de fallback.
 
-        On utilise le template par défaut fourni par `letters_service` (templates/lettre_modern.html.j2).
-        (On le rendra configurable via Settings ensuite.)
+        La sélection réelle du template est maintenant gérée par `letters_service` (profil/app)
+        et/ou par l'UI via `template_name`.
         """
-        return get_default_letter_template_path()
+        # Fallback legacy: on garde un chemin mais on évite d'imposer un template si possible.
+        # (letters_service choisira le défaut profil/app si template_path=None)
+        return Path.cwd() / "templates" / "lettre_moderne.html.j2"
 
     def _get_letters_output_dir(self) -> Path:
         """Dossier de sortie des lettres générées."""
@@ -322,7 +327,7 @@ class MainWindow(QMainWindow):
         self.session.commit()
         return lettre
 
-    def on_prepare_letter(self):
+    def on_prepare_letter(self, template_name: str = ""):
         offre = self._get_selected_offer()
         if not offre:
             QMessageBox.warning(self, "Préparation lettre", "Sélectionne d'abord une offre dans la liste.")
@@ -338,18 +343,26 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            template_path = self._get_letter_template_path()
             out_dir = self._get_letters_output_dir()
             hint = f"{getattr(offre, 'entreprise', '')}-{getattr(offre, 'titre_poste', getattr(offre, 'titre', ''))}".strip("-")
 
-            result = generate_letter_html(
-                template_path=template_path,
+            kwargs = dict(
                 output_dir=out_dir,
                 profil=profil,
                 offre=offre,
                 lettre=lettre,
                 filename_hint=hint or "lettre",
             )
+
+            # Si un template a été choisi dans l'UI, on le force via template_name.
+            # Sinon, on laisse letters_service choisir le défaut (profil/app).
+            if template_name:
+                kwargs["template_name"] = template_name
+                kwargs["template_path"] = None
+            else:
+                kwargs["template_path"] = None
+
+            result = generate_letter_html(**kwargs)
             output_path = result.output_path
 
             # Persiste le résultat sur la lettre
@@ -572,3 +585,27 @@ class MainWindow(QMainWindow):
 
         # Lance ensuite la génération standard
         self.on_prepare_letter()
+
+
+    def on_generate_letter_from_editor_with_template(self, template_name: str):
+        """Génère la lettre depuis l'éditeur en forçant un template (data/templates)."""
+        page = self._get_offer_detail_page_widget()
+        payload = None
+        if page:
+            try:
+                payload = {
+                    "paragraphe_intro": page.ed_intro.toPlainText().strip() if hasattr(page, "ed_intro") else "",
+                    "paragraphe_exp1": page.ed_exp1.toPlainText().strip() if hasattr(page, "ed_exp1") else "",
+                    "paragraphe_exp2": page.ed_exp2.toPlainText().strip() if hasattr(page, "ed_exp2") else "",
+                    "paragraphe_poste": page.ed_poste.toPlainText().strip() if hasattr(page, "ed_poste") else "",
+                    "paragraphe_personnalite": page.ed_personnalite.toPlainText().strip() if hasattr(page, "ed_personnalite") else "",
+                    "paragraphe_conclusion": page.ed_conclusion.toPlainText().strip() if hasattr(page, "ed_conclusion") else "",
+                }
+                payload = self._normalize_letter_payload(payload)
+            except Exception:
+                payload = None
+
+        if payload:
+            self.on_save_letter_draft(payload)
+
+        self.on_prepare_letter(template_name=template_name or "")

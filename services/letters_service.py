@@ -28,9 +28,22 @@ from typing import Any, Mapping, Optional
 
 
 try:
-    from jinja2 import Environment, StrictUndefined, Undefined, UndefinedError, TemplateSyntaxError, select_autoescape
+    from jinja2 import (
+        Environment,
+        StrictUndefined,
+        Undefined,
+        UndefinedError,
+        TemplateSyntaxError,
+        select_autoescape,
+    )
+    try:
+        # Sandbox recommandé (limite l'accès aux attributs Python)
+        from jinja2.sandbox import SandboxedEnvironment
+    except Exception:  # pragma: no cover
+        SandboxedEnvironment = None  # type: ignore
 except Exception:  # pragma: no cover
     Environment = None  # type: ignore
+    SandboxedEnvironment = None  # type: ignore
     StrictUndefined = None  # type: ignore
     Undefined = None  # type: ignore
     UndefinedError = None  # type: ignore
@@ -59,16 +72,21 @@ class LetterTemplateError(RuntimeError):
 # Template resolution
 # -----------------------------------------------------------------------------
 
+# Dossier templates utilisateur (local, à ignorer par Git)
+_USER_TEMPLATES_DIR: Path = Path.cwd() / "data" / "templates"
+
 # Dossiers connus (ordre de priorité)
 _DEFAULT_TEMPLATE_DIRS: tuple[Path, ...] = (
     # <repo>/templates
     Path(__file__).resolve().parent.parent / "templates",
     # <repo>/ui/templates (si tu en ajoutes plus tard)
     Path(__file__).resolve().parent.parent / "ui" / "templates",
+    # <project>/data/templates (templates importés par l'utilisateur)
+    _USER_TEMPLATES_DIR,
 )
 
 # Template lettre par défaut (fichier présent dans /templates)
-DEFAULT_LETTER_TEMPLATE_NAME = "lettre_modern.html.j2"
+DEFAULT_LETTER_TEMPLATE_NAME = "lettre_moderne.html.j2"
 
 
 def resolve_template_path(
@@ -133,13 +151,133 @@ def resolve_template_path(
 
 
 # -----------------------------------------------------------------------------
+# User template management
+# -----------------------------------------------------------------------------
+
+def ensure_user_templates_dir() -> Path:
+    """Crée (si besoin) et retourne le dossier des templates utilisateur."""
+    _USER_TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+    return _USER_TEMPLATES_DIR
+
+
+def list_user_templates() -> list[Path]:
+    """Liste les templates utilisateur disponibles (triés)."""
+    d = ensure_user_templates_dir()
+    items = []
+    for p in d.glob("*.j2"):
+        if p.is_file():
+            items.append(p)
+    # Autorise aussi les templates HTML non-j2 (fallback simple)
+    for p in d.glob("*.html"):
+        if p.is_file():
+            items.append(p)
+    # Uniques + tri
+    uniq = sorted({p.resolve() for p in items})
+    return uniq
+
+
+def import_user_template(src_path: str | Path, *, overwrite: bool = False) -> Path:
+    """Importe un template (copie) dans `data/templates/`.
+
+    Args:
+        src_path: chemin du fichier template à importer.
+        overwrite: si True, écrase un template existant avec le même nom.
+
+    Returns:
+        Chemin du template importé dans le dossier utilisateur.
+
+    Raises:
+        FileNotFoundError: si le fichier source n'existe pas.
+        LetterTemplateError: si l'extension est invalide ou si la copie échoue.
+    """
+    src = Path(src_path).expanduser().resolve()
+    if not src.exists() or not src.is_file():
+        raise FileNotFoundError(f"Fichier template introuvable: {src}")
+
+    if src.suffix.lower() not in {".j2", ".html"} and not src.name.lower().endswith(".html.j2"):
+        raise LetterTemplateError(
+            "Template invalide. Formats supportés: .j2, .html, .html.j2"
+        )
+
+    dest_dir = ensure_user_templates_dir()
+    dest = (dest_dir / src.name).resolve()
+
+    if dest.exists() and not overwrite:
+        raise LetterTemplateError(
+            f"Un template portant ce nom existe déjà: {dest.name}. "
+            "Renomme-le ou active overwrite=True."
+        )
+
+    try:
+        dest.write_bytes(src.read_bytes())
+    except Exception as e:
+        raise LetterTemplateError(f"Impossible d'importer le template: {e}")
+
+    # Validation légère (compile) si Jinja2 dispo
+    try:
+        validate_template_file(dest)
+    except Exception:
+        # On laisse le fichier importé, mais l'UI pourra afficher l'erreur au test.
+        pass
+
+    return dest
+
+
+def validate_template_text(template_html: str) -> None:
+    """Valide un template (syntaxe Jinja2) en le compilant.
+
+    Si Jinja2 n'est pas disponible, ne fait qu'une validation minimale.
+    """
+    if not template_html.strip():
+        raise LetterTemplateError("Template vide")
+
+    # Si présence de blocs Jinja2, on requiert Jinja2
+    if ("{%" in template_html or "%}" in template_html) and Environment is None:
+        raise LetterTemplateError(
+            "Template Jinja2 détecté (.j2) mais Jinja2 n'est pas installé. "
+            "Installe la dépendance: pip install jinja2"
+        )
+
+    if Environment is None:
+        # Fallback: on accepte (remplacements {{ a.b }})
+        return
+
+    try:
+        env_cls = SandboxedEnvironment if SandboxedEnvironment is not None else Environment
+        env = env_cls(
+            autoescape=select_autoescape(["html", "xml"]) if select_autoescape is not None else True,
+            undefined=Undefined,  # type: ignore[arg-type]
+            trim_blocks=True,
+            lstrip_blocks=True,
+        )
+        env.from_string(template_html)
+    except Exception as e:
+        if TemplateSyntaxError is not None and isinstance(e, TemplateSyntaxError):
+            line = getattr(e, "lineno", None)
+            details = str(e)
+            raise LetterTemplateError(
+                "Erreur de syntaxe Jinja2" + (f" (ligne {line})" if line else "") + f": {details}"
+            )
+        raise LetterTemplateError(f"Template invalide: {e}")
+
+
+def validate_template_file(path: str | Path) -> None:
+    """Valide un fichier template."""
+    p = Path(path).expanduser().resolve()
+    if not p.exists() or not p.is_file():
+        raise FileNotFoundError(f"Template introuvable: {p}")
+    validate_template_text(p.read_text(encoding="utf-8"))
+
+
+# -----------------------------------------------------------------------------
 # Public API
 # -----------------------------------------------------------------------------
 
 
 def generate_letter_html(
     *,
-    template_path: str | Path,
+    template_path: str | Path | None = None,
+    template_name: str | None = None,
     output_dir: str | Path,
     profil: object,
     offre: object,
@@ -151,7 +289,8 @@ def generate_letter_html(
     """Génère une lettre HTML à partir d'un template.
 
     Args:
-        template_path: chemin vers le template HTML.
+        template_path: chemin (ou nom) vers le template HTML. Si None, utilise le template par défaut (profil/app).
+        template_name: nom du template (ex: "mon_modele.html.j2"), pratique pour data/templates.
         output_dir: dossier de sortie.
         profil: objet profil (ex: ProfilCandidat).
         offre: objet offre (ex: Offre).
@@ -169,19 +308,22 @@ def generate_letter_html(
     """
     now = now or datetime.now()
 
-    resolved_template, tried = resolve_template_path(template_path)
-    if not resolved_template.exists():
-        tried_txt = "\n".join(f"- {p}" for p in tried)
-        raise FileNotFoundError(
-            f"Template introuvable. Chemins testés :\n{tried_txt}"
-        )
-
-    template_path = resolved_template
+    template_path = resolve_template_for_generation(
+        profil=profil,
+        template_path=template_path,
+        template_name=template_name,
+    )
 
     output_dir = Path(output_dir).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     template_html = template_path.read_text(encoding="utf-8")
+
+    # Validation (compile Jinja2) avant rendu pour des erreurs plus propres
+    try:
+        validate_template_text(template_html)
+    except LetterTemplateError as e:
+        raise LetterTemplateError(f"Template invalide: {e}")
 
     # Si le template contient des blocs Jinja2 et que Jinja2 n'est pas installé, on aide l'utilisateur.
     if Environment is None and ("{%" in template_html or "%}" in template_html):
@@ -231,6 +373,62 @@ def get_default_letter_template_path() -> Path:
     """Retourne le chemin résolu du template de lettre par défaut."""
     resolved, _ = resolve_template_path(DEFAULT_LETTER_TEMPLATE_NAME)
     return resolved
+
+
+# --- Helpers pour template par défaut profil et résolution ---
+
+def get_profile_default_template_name(profil: object) -> str:
+    """Retourne le nom du template par défaut depuis le profil, si disponible."""
+    for field in (
+        "template_lettre",
+        "template_letter",
+        "default_template",
+        "default_letter_template",
+    ):
+        if hasattr(profil, field):
+            val = getattr(profil, field)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+    return ""
+
+
+def resolve_template_for_generation(
+    *,
+    profil: object,
+    template_path: str | Path | None = None,
+    template_name: str | None = None,
+    extra_dirs: Optional[list[str | Path]] = None,
+) -> Path:
+    """Résout le template à utiliser pour la génération.
+
+    Priorité:
+    1) template_path explicite (chemin ou nom)
+    2) template_name explicite (nom de fichier) — utile pour data/templates
+    3) template par défaut stocké dans le profil
+    4) template par défaut de l'application
+    """
+    if template_path:
+        resolved, tried = resolve_template_path(template_path, extra_dirs=extra_dirs)
+        if not resolved.exists():
+            tried_txt = "\n".join(f"- {p}" for p in tried)
+            raise FileNotFoundError(f"Template introuvable. Chemins testés :\n{tried_txt}")
+        return resolved
+
+    if template_name:
+        resolved, tried = resolve_template_path(template_name, extra_dirs=extra_dirs)
+        if not resolved.exists():
+            tried_txt = "\n".join(f"- {p}" for p in tried)
+            raise FileNotFoundError(f"Template introuvable. Chemins testés :\n{tried_txt}")
+        return resolved
+
+    profile_tpl = get_profile_default_template_name(profil)
+    if profile_tpl:
+        resolved, tried = resolve_template_path(profile_tpl, extra_dirs=extra_dirs)
+        if resolved.exists():
+            return resolved
+
+    # Fallback: template app
+    return get_default_letter_template_path()
 
 
 def build_letter_context(*, profil: object, offre: object, now: Optional[datetime] = None) -> dict[str, Any]:
@@ -348,7 +546,8 @@ def render_template(template_html: str, context: Mapping[str, Any], *, strict: b
     if Environment is not None:
         try:
             undefined_cls = StrictUndefined if strict and StrictUndefined is not None else Undefined
-            env = Environment(
+            env_cls = SandboxedEnvironment if SandboxedEnvironment is not None else Environment
+            env = env_cls(
                 autoescape=select_autoescape(["html", "xml"]) if select_autoescape is not None else True,
                 undefined=undefined_cls,  # type: ignore[arg-type]
                 trim_blocks=True,
