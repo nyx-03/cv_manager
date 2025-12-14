@@ -16,6 +16,8 @@ from ui.pages.offer_form_page import OfferFormPage
 
 from models import Offre
 
+from services.candidatures_service import OfferCandidatureStats
+
 
 # --- Page indices (QStackedWidget) ---
 PAGE_DASHBOARD = 0
@@ -129,6 +131,17 @@ class ApplicationView(QWidget):
 
     def set_offers_status_resolver(self, resolver: Callable[[object], str]) -> None:
         self.offers_page.set_status_resolver(resolver)
+
+    def set_offers_candidature_stats_resolver(
+        self, resolver: Callable[[object], OfferCandidatureStats]
+    ) -> None:
+        """Injecte une fonction qui retourne les stats de candidatures pour une offre.
+
+        Cette méthode délègue au composant de la page Offres si celui-ci expose
+        `set_candidature_stats_resolver` (OffersPage) ou une API équivalente.
+        """
+        if hasattr(self.offers_page, "set_candidature_stats_resolver"):
+            self.offers_page.set_candidature_stats_resolver(resolver)
 
     def set_offers(self, offers) -> None:
         self.offers_page.set_offers(offers)

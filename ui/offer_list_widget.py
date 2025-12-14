@@ -24,6 +24,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 
 from ui.pages.offers_page import OffersPage
+from services.candidatures_service import OfferCandidatureStats
 
 
 class OfferListWidget(QWidget):
@@ -71,6 +72,14 @@ class OfferListWidget(QWidget):
 
     def set_status_resolver(self, resolver: Optional[Callable[[object], str]]) -> None:
         self._page.set_status_resolver(resolver)
+
+    def set_candidature_stats_resolver(
+        self,
+        resolver: Optional[Callable[[object], OfferCandidatureStats]],
+    ) -> None:
+        """Injecte un resolver de statistiques de candidatures vers OffersPage."""
+        if hasattr(self._page, "set_candidature_stats_resolver"):
+            self._page.set_candidature_stats_resolver(resolver)
 
     def set_columns(self, columns: int) -> None:
         self._page.set_columns(columns)

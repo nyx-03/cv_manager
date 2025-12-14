@@ -25,6 +25,7 @@ from ui.application_view import (
 from services.offers_service import list_offers, create_offer, OfferCreateData
 from services.candidatures_service import (
     list_for_offer,
+    get_offer_stats,
     get_candidature,
     create_candidature,
     mark_sent,
@@ -68,6 +69,12 @@ class MainWindow(QMainWindow):
 
         # Provide status resolver for offer cards (colors)
         self.view.set_offers_status_resolver(self._resolve_offer_status)
+
+        # Provide candidature stats resolver for offer cards (total + per-status badges)
+        if hasattr(self.view, "set_offers_candidature_stats_resolver"):
+            self.view.set_offers_candidature_stats_resolver(
+                lambda offer: get_offer_stats(self.session, offer.id)
+            )
 
         # Wire view -> controller
         self.view.offerClicked.connect(self.open_offer_detail)
