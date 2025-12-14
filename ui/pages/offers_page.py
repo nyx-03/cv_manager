@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, Optional, Any
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui.widgets.offer_card import OfferCard
+from services.candidatures_service import OfferCandidatureStats
 
 
 class OffersPage(QWidget):
@@ -33,10 +34,12 @@ class OffersPage(QWidget):
         title: str = "Annonces",
         columns: int = 3,
         status_resolver: Optional[Callable[[object], str]] = None,
+        candidature_stats_resolver: Optional[Callable[[object], OfferCandidatureStats]] = None,
     ):
         super().__init__(parent)
         self._columns = max(1, int(columns))
         self._status_resolver = status_resolver
+        self._candidature_stats_resolver = candidature_stats_resolver
         self._offers: list[object] = []
 
         root = QVBoxLayout(self)
@@ -54,8 +57,8 @@ class OffersPage(QWidget):
         self.container = QWidget()
         self.grid = QGridLayout(self.container)
         self.grid.setContentsMargins(0, 0, 0, 0)
-        self.grid.setHorizontalSpacing(10)
-        self.grid.setVerticalSpacing(10)
+        self.grid.setHorizontalSpacing(8)
+        self.grid.setVerticalSpacing(8)
 
         self.scroll.setWidget(self.container)
         root.addWidget(self.scroll)
@@ -71,6 +74,13 @@ class OffersPage(QWidget):
     def set_status_resolver(self, resolver: Optional[Callable[[object], str]]) -> None:
         """Permet à la MainWindow (ou un service) de définir comment calculer le statut d'une offre."""
         self._status_resolver = resolver
+        self._render()
+
+    def set_candidature_stats_resolver(
+        self, resolver: Optional[Callable[[object], OfferCandidatureStats]]
+    ) -> None:
+        """Permet d'injecter une fonction qui retourne les stats de candidatures pour une offre."""
+        self._candidature_stats_resolver = resolver
         self._render()
 
     def set_offers(self, offers: Iterable[object]) -> None:
@@ -106,6 +116,27 @@ class OffersPage(QWidget):
         card.style().unpolish(card)
         card.style().polish(card)
 
+    def _apply_candidature_stats(self, card: OfferCard, offer: object) -> None:
+        if self._candidature_stats_resolver is None:
+            return
+        try:
+            stats = self._candidature_stats_resolver(offer)
+        except Exception:
+            return
+        if not stats:
+            return
+
+        # Convert enum keys to strings for QSS and display.
+        by_status: dict[str, int] = {}
+        try:
+            for k, v in (stats.by_status or {}).items():
+                key = getattr(k, "value", str(k))
+                by_status[str(key)] = int(v or 0)
+        except Exception:
+            by_status = {}
+
+        card.set_candidature_stats(int(stats.total or 0), by_status)
+
     def _render(self) -> None:
         self._clear_grid()
 
@@ -123,6 +154,7 @@ class OffersPage(QWidget):
 
             card = OfferCard(offer, self._on_card_clicked, self)
             self._apply_status(card, offer)
+            self._apply_candidature_stats(card, offer)
             self.grid.addWidget(card, row, col)
 
         for c in range(cols):
