@@ -119,8 +119,8 @@ def _parse_offer_html(*, html: str, url: str, final_url: str) -> Dict[str, str]:
     # 2) JSON-LD JobPosting
     _extract_json_ld_jobposting(soup, data)
 
-    # 2bis) Jobup: parfois le détail est présent dans la page mais sans JSON-LD JobPosting
-    if (not data.get("_has_jobposting")) and _domain_is_jobup(data.get("source_site", "")):
+    # 2bis) Jobup: le détail peut être présent sans JSON-LD JobPosting, et OG/<title> peuvent rester SEO.
+    if _domain_is_jobup(data.get("source_site", "")):
         _extract_jobup_detail_from_page(soup, data)
 
     # Si on n'a pas de JobPosting ni de détail, il est très probable qu'on soit sur une page de liste,
@@ -311,9 +311,19 @@ def _domain_is_jobup(source_site: str) -> bool:
 def _extract_jobup_detail_from_page(soup: BeautifulSoup, data: Dict[str, str]) -> None:
     """Tente d'extraire le détail d'annonce Jobup depuis le HTML rendu.
 
-    Jobup peut renvoyer une page dont le <title>/OG ressemble à une liste, alors que le détail
-    est présent plus bas (bloc 'Détails de l'annonce d'emploi').
+    Objectif: éviter les faux positifs (page liste/SEO) et remplir correctement:
+    - titre_poste
+    - entreprise
+    - localisation
+    - type_contrat
+    - texte_annonce
+
+    Stratégie:
+    1) On cherche le bloc texte qui contient "Détails de l'annonce d'emploi".
+    2) On s'appuie d'abord sur la section "Infos sur l'emploi" (Lieu/Contrat/...) qui apparaît sur la page détail.
+    3) On extrait ensuite un header court avant cette section et on le nettoie (CTA, doublons).
     """
+
     full_text = soup.get_text(" ", strip=True)
     marker = "Détails de l'annonce d'emploi"
     idx = full_text.find(marker)
@@ -322,90 +332,91 @@ def _extract_jobup_detail_from_page(soup: BeautifulSoup, data: Dict[str, str]) -
 
     detail = full_text[idx:]
 
-    # --------- Header parsing (title / company / location) ---------
-    # On isole le header entre le marker et "Infos sur l'emploi" (quand présent)
-    header = detail
-    if "Infos sur l'emploi" in header:
-        header = header.split("Infos sur l'emploi", 1)[0]
+    # Si la section "Infos sur l'emploi" n'est pas présente, c'est souvent une page liste.
+    if "Infos sur l'emploi" not in detail:
+        return
 
-    # Nettoyage des CTA
-    header = re.sub(r"\b(Postuler|Sauvegarder|Signaler cette offre d'emploi|Ouvrir dans un nouvel onglet)\b", " ", header)
-    header = re.sub(r"\s{2,}", " ", header).strip()
+    # --- Champs structurés depuis la section "Infos sur l'emploi" ---
+    if not data.get("type_contrat"):
+        m = re.search(r"Type de contrat\s*:\s*([^\n\r]+?)(?:\s+Lieu de travail\s*:|\s+Taux d'activité\s*:|\s+Nous recherchons|\s+Missions|\s+Profil|\s+Conditions|\s+À propos)", detail)
+        if m:
+            data["type_contrat"] = m.group(1).strip()
 
-    # Retire le marker
+    if not data.get("localisation"):
+        m = re.search(r"Lieu de travail\s*:\s*([^\n\r]+?)(?:\s+Taux d'activité\s*:|\s+Type de contrat\s*:|\s+Nous recherchons|\s+Missions|\s+Profil|\s+Conditions|\s+À propos)", detail)
+        if m:
+            data["localisation"] = m.group(1).strip()
+
+    # --- Header: on prend le texte entre le marker et "Infos sur l'emploi" ---
+    header = detail.split("Infos sur l'emploi", 1)[0]
     if header.startswith(marker):
         header = header[len(marker):].strip()
 
-    # Localisation: souvent en fin du header, ex: "Renens VD" / "Genève" / "Lausanne VD"
-    # On essaie d'abord un pattern "Ville + Canton".
-    loc_match = re.search(r"\b([A-Za-zÀ-ÖØ-öø-ÿ'\-]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ'\-]+)*)\s+([A-Z]{2})\b\s*$", header)
-    location = ""
-    if loc_match:
-        location = f"{loc_match.group(1).strip()} {loc_match.group(2).strip()}"
-        header_wo_loc = header[: loc_match.start()].strip()
-    else:
-        header_wo_loc = header
+    # Nettoyage: CTA / badges
+    header = re.sub(r"\b(Postuler|Sauvegarder|Signaler cette offre d'emploi|Ouvrir dans un nouvel onglet)\b", " ", header)
+    header = re.sub(r"\b(Candidature simplifiée|Nouveau|Mis en avant)\b", " ", header)
+    header = re.sub(r"\s{2,}", " ", header).strip()
 
-    # Entreprise: on cible un suffixe courant (SA/AG/Sàrl/GmbH/etc.) en fin de chaîne
-    company = ""
-    company_match = re.search(
-        r"(.+?)\b((?:SA|AG|Sàrl|SARL|GmbH|Ltd|Inc|LLC))\b\s*$",
-        header_wo_loc,
-        flags=re.IGNORECASE,
-    )
-    if company_match:
-        company = (company_match.group(1) + company_match.group(2)).strip()
-        title = header_wo_loc[: company_match.start()].strip()
-    else:
-        # Fallback: on sépare sur le dernier bloc de mots qui ressemble à une entreprise
-        # en utilisant des marqueurs fréquents (Groupe, Ville de, Fondation, Association)
-        m2 = re.search(r"\b(Groupe|Ville de|Canton de|Fondation|Association)\b.*$", header_wo_loc)
+    # Le header peut contenir des doublons (titre+entreprise répétés). On essaye de réduire.
+    # On garde uniquement les ~30 premiers mots (avant que ça parte en SEO ou navigation).
+    words = header.split()
+    header_short = " ".join(words[:30]).strip()
+
+    # Heuristique entreprise (suffixes courants). On capture la dernière occurrence plausible.
+    company = data.get("entreprise", "") or ""
+    title = data.get("titre_poste", "") or ""
+
+    # Liste de suffixes typiques pour entreprises suisses/intl.
+    suffixes = r"(?:SA|AG|Sàrl|SARL|GmbH|Ltd|Inc|LLC|Co\.|S\.A\.|S\.A)"
+
+    m_company = re.search(rf"(.+?)\b({suffixes})\b", header_short, flags=re.IGNORECASE)
+    if m_company:
+        # Entreprise = groupe(1)+suffixe, titre = avant l'entreprise
+        company_candidate = (m_company.group(1).strip() + " " + m_company.group(2).strip()).strip()
+        before = header_short[: m_company.start()].strip()
+        # Si le "before" est vide, on ne force pas le titre.
+        if company_candidate and not company:
+            company = company_candidate
+        if before and not title:
+            title = before
+
+    # Fallback: si pas de suffixe, on tente de prendre le dernier bloc "Ville de ..." / "Fondation ..." etc.
+    if not company:
+        m2 = re.search(r"\b(Ville de|Canton de|Fondation|Association|Groupe)\b.*$", header_short)
         if m2:
-            company = header_wo_loc[m2.start():].strip()
-            title = header_wo_loc[: m2.start()].strip()
-        else:
-            title = header_wo_loc
+            company = header_short[m2.start():].strip()
+            if not title:
+                title = header_short[: m2.start()].strip()
 
-    # Assignations si cohérent
-    if title and ("offres d'emploi" not in title.lower()):
+    # Fallback final: si on n'a rien, on utilise la première ligne plausible.
+    if not title:
+        # On évite les titres SEO
+        candidate = header_short
+        if candidate and ("offres d'emploi" not in candidate.lower()):
+            title = candidate
+
+    # Nettoyage des titres anormaux (souvent issus de la page liste)
+    if title and ("offres d'emploi" in title.lower() or "catégorie" in title.lower()):
+        title = ""
+
+    if title and not data.get("titre_poste"):
         data["titre_poste"] = title
+    elif title:
+        data["titre_poste"] = title
+
     if company and not data.get("entreprise"):
         data["entreprise"] = company
-    if location and not data.get("localisation"):
-        data["localisation"] = location
 
-    # Type de contrat
-    if not data.get("type_contrat"):
-        m2 = re.search(
-            r"Type de contrat\s*:\s*([^\n\r]+?)\s+(?:Lieu de travail|Taux d'activité|Nous recherchons|Missions|Profil du candidat|Conditions|À propos)",
-            detail,
-        )
-        if m2:
-            data["type_contrat"] = m2.group(1).strip()
-
-    # Localisation alternative
-    if not data.get("localisation"):
-        m3 = re.search(
-            r"Lieu de travail\s*:\s*([^\n\r]+?)\s+(?:Taux d'activité|Type de contrat|Nous recherchons|Missions|Profil du candidat|Conditions|À propos)",
-            detail,
-        )
-        if m3:
-            data["localisation"] = m3.group(1).strip()
-
-    # --------- Description parsing ---------
-    # On prend le bloc après "Lieu de travail" (section Infos sur l'emploi) jusqu'à "À propos"
+    # --- Description: prendre le bloc après "Lieu de travail" et avant "À propos" ---
     if not data.get("texte_annonce"):
         m_desc = re.search(r"Lieu de travail\s*:\s*[^\n\r]+\s+(.*)", detail)
         if m_desc:
             desc = m_desc.group(1)
-            # Coupe avant les sections de fin
             end_markers = [
                 "À propos de l'entreprise",
                 "À propos de l’entreprise",
-                "À propos de l’entreprise",
                 "Catégories:",
-                "Postuler",
-                "Sauvegarder",
+                "Ouvrir dans un nouvel onglet",
                 "Signaler cette offre",
             ]
             for mk in end_markers:
@@ -413,12 +424,17 @@ def _extract_jobup_detail_from_page(soup: BeautifulSoup, data: Dict[str, str]) -
                     desc = desc.split(mk, 1)[0]
                     break
 
+            # Nettoyage des répétitions de champs "Infos sur l'emploi" dans le texte
+            desc = re.sub(r"\b(Date de publication\s*:\s*[^\n\r]+)\b", " ", desc)
+            desc = re.sub(r"\b(Taux d'activité\s*:\s*[^\n\r]+)\b", " ", desc)
+            desc = re.sub(r"\b(Type de contrat\s*:\s*[^\n\r]+)\b", " ", desc)
+            desc = re.sub(r"\b(Lieu de travail\s*:\s*[^\n\r]+)\b", " ", desc)
+
             desc = re.sub(r"\s{2,}", " ", desc).strip()
-            # On ignore les descriptions trop courtes (bruit)
             if len(desc) > 200:
                 data["texte_annonce"] = desc[:8000]
 
-    # Si on a un titre réaliste + une description, on considère que le détail est bien présent
+    # Marqueur: si on a une description correcte et un titre plausible, on considère qu'on est sur une page détail.
     titre = (data.get("titre_poste") or "").lower()
     if data.get("texte_annonce") and titre and ("offres d'emploi" not in titre):
         data["_has_detail"] = True
@@ -426,6 +442,8 @@ def _extract_jobup_detail_from_page(soup: BeautifulSoup, data: Dict[str, str]) -
 
 def _looks_like_listing_or_shell(soup: BeautifulSoup, data: Dict[str, str]) -> bool:
     """Heuristique: détecte une page qui n'est pas un détail d'annonce."""
+    if data.get("_has_detail"):
+        return False
     title = (soup.title.string.strip() if soup.title and soup.title.string else "").lower()
 
     # Titres typiques de pages liste/catégorie (Jobup & autres)

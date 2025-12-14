@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QWidget,
@@ -67,6 +67,9 @@ class OfferFormPage(QWidget):
         self._set_info_message("", kind="")
         self._set_mode_title(is_edit=False)
 
+        self._last_dump_path = None
+        self.btn_open_dump.setVisible(False)
+
         self.btn_save.setText("Créer l'offre")
         # UX: re-enable prefill buttons
         self.btn_prefill.setEnabled(True)
@@ -106,15 +109,20 @@ class OfferFormPage(QWidget):
             self.input_contract.setText(str(data.get("type_contrat")))
         if data.get("texte_annonce"):
             self.text_description.setPlainText(str(data.get("texte_annonce")))
-
         dump_path = data.get("_dump_path")
-        if dump_path:
-            self._set_info_message(f"Import OK (dump: {dump_path})", kind="success")
+        self._last_dump_path = str(dump_path) if dump_path else None
+        self.btn_open_dump.setVisible(bool(self._last_dump_path))
+
+        if self._last_dump_path:
+            self._set_info_message("Import OK. Un dump de diagnostic est disponible.", kind="success")
         else:
-            self._set_info_message("Import OK", kind="success")
+            self._set_info_message("Import OK.", kind="success")
 
     def set_import_error(self, message: str) -> None:
         self._set_info_message(message, kind="error")
+        dump_path = self._extract_dump_path_from_error(message)
+        self._last_dump_path = dump_path
+        self.btn_open_dump.setVisible(bool(dump_path))
 
     # ---------------------------------------------------------------------
     # UI construction
@@ -136,6 +144,11 @@ class OfferFormPage(QWidget):
         self.info_label.setObjectName("formInfo")
         self.info_label.setWordWrap(True)
         self.info_label.setVisible(False)
+
+        self.btn_open_dump = QPushButton("Ouvrir le dump")
+        self.btn_open_dump.setObjectName("secondaryButton")
+        self.btn_open_dump.setVisible(False)
+        self._last_dump_path: Optional[str] = None
 
         # Form fields
         self.input_url = QLineEdit()
@@ -193,6 +206,7 @@ class OfferFormPage(QWidget):
         root.addLayout(header)
 
         root.addWidget(self.info_label)
+        root.addWidget(self.btn_open_dump)
         root.addWidget(self.divider)
 
         # URL row + actions
@@ -237,10 +251,27 @@ class OfferFormPage(QWidget):
         self.btn_prefill.clicked.connect(self._on_prefill_requests)
         self.btn_prefill_browser.clicked.connect(self._on_prefill_browser)
         self.btn_save.clicked.connect(self._on_save)
+        self.btn_open_dump.clicked.connect(self._on_open_dump)
 
     # ---------------------------------------------------------------------
     # Actions
     # ---------------------------------------------------------------------
+
+    def _set_busy(self, busy: bool, label: str = "") -> None:
+        # Disable actions during import / save to avoid double clicks.
+        self.btn_prefill.setEnabled(not busy and self.btn_prefill.isEnabled())
+        self.btn_prefill_browser.setEnabled(not busy and self.btn_prefill_browser.isEnabled())
+        self.btn_open_url.setEnabled(not busy)
+        self.btn_save.setEnabled(not busy)
+        if label:
+            self._set_info_message(label, kind="info")
+
+    def _on_open_dump(self) -> None:
+        if not self._last_dump_path:
+            self._set_info_message("Aucun dump disponible.", kind="error")
+            return
+        qurl = QUrl.fromLocalFile(self._last_dump_path)
+        QDesktopServices.openUrl(qurl)
 
     def _on_back(self) -> None:
         """Return to offers list via ApplicationView."""
@@ -262,7 +293,13 @@ class OfferFormPage(QWidget):
         if not url:
             self._set_info_message("Aucune URL à ouvrir.", kind="error")
             return
-        QDesktopServices.openUrl(url)  # type: ignore[arg-type]
+
+        # Ensure a scheme so QUrl is valid.
+        if not (url.startswith("http://") or url.startswith("https://")):
+            url = "https://" + url
+            self.input_url.setText(url)
+
+        QDesktopServices.openUrl(QUrl(url))
 
     def _on_prefill_requests(self) -> None:
         url = self.input_url.text().strip()
@@ -270,19 +307,22 @@ class OfferFormPage(QWidget):
             self._set_info_message("Renseigne une URL avant de pré-remplir.", kind="error")
             return
 
-        self._set_info_message("Import en cours...", kind="info")
+        self._set_busy(True, "Import en cours...")
         try:
             data = import_offer_from_url(url)
         except UrlImportError as e:
             msg = str(e)
             self.set_import_error(msg)
             self._maybe_offer_dump_open(msg)
+            self._set_busy(False)
             return
         except Exception as e:
             self.set_import_error(f"Erreur inattendue : {e}")
+            self._set_busy(False)
             return
 
         self.set_prefill_data(data)
+        self._set_busy(False)
 
     def _on_prefill_browser(self) -> None:
         url = self.input_url.text().strip()
@@ -290,19 +330,22 @@ class OfferFormPage(QWidget):
             self._set_info_message("Renseigne une URL avant de pré-remplir.", kind="error")
             return
 
-        self._set_info_message("Import navigateur en cours...", kind="info")
+        self._set_busy(True, "Import navigateur en cours...")
         try:
             data = import_offer_from_url_browser(url)
         except UrlImportError as e:
             msg = str(e)
             self.set_import_error(msg)
             self._maybe_offer_dump_open(msg)
+            self._set_busy(False)
             return
         except Exception as e:
             self.set_import_error(f"Erreur inattendue : {e}")
+            self._set_busy(False)
             return
 
         self.set_prefill_data(data)
+        self._set_busy(False)
 
     def _on_save(self) -> None:
         self.btn_save.setEnabled(False)
@@ -402,7 +445,7 @@ class OfferFormPage(QWidget):
         box.exec()
 
         if box.clickedButton() == btn_open:
-            QDesktopServices.openUrl(dump_path)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(dump_path))
 
     def _extract_dump_path_from_error(self, msg: str) -> Optional[str]:
         # Le service écrit généralement "Dump: /path/to/file.txt"
@@ -414,7 +457,7 @@ class OfferFormPage(QWidget):
 
     def _get_session(self):
         # Remonte les parents pour trouver un attribut `.session`
-        w: Optional[QObjectLike] = self
+        w: Optional[object] = self
         for _ in range(8):
             if w is None:
                 break
