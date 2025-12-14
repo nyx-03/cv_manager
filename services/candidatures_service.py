@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Services (métier) liés aux candidatures / lettres.
 
 Objectifs :
@@ -8,8 +10,6 @@ Objectifs :
 Ce module ne dépend PAS de Qt.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -18,6 +18,14 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from models import Candidature, CandidatureStatut
+
+
+@dataclass(frozen=True)
+class OfferCandidatureStats:
+    """Statistiques agrégées sur les candidatures d'une offre."""
+
+    total: int
+    by_status: dict[CandidatureStatut, int]
 
 
 @dataclass(frozen=True)
@@ -157,3 +165,25 @@ def _try_delete_file(path: str) -> bool:
     except Exception:
         return False
     return False
+
+def get_offer_stats(session: Session, offre_id: int) -> OfferCandidatureStats:
+    """
+    Retourne les statistiques de candidatures pour une offre donnée :
+    - total: nombre total de candidatures
+    - by_status: dict de CandidatureStatut -> nombre (0 si aucun)
+    """
+    from sqlalchemy import func
+
+    # Obtenir les comptes groupés par statut pour l'offre donnée
+    q = (
+        session.query(Candidature.statut, func.count(Candidature.id))
+        .filter(Candidature.offre_id == offre_id)
+        .group_by(Candidature.statut)
+    )
+    counts = dict(q.all())
+    # Initialiser le dict de statuts avec 0 pour tous les statuts possibles
+    by_status = {statut: 0 for statut in CandidatureStatut}
+    for statut, count in counts.items():
+        by_status[statut] = count
+    total = sum(by_status.values())
+    return OfferCandidatureStats(total=total, by_status=by_status)
