@@ -218,7 +218,6 @@ QToolBar#MainToolbar {
     background: #ffffff;
     border-bottom: 1px solid #d1d5db;
     padding: 6px 8px;
-    spacing: 6px;
 }
 
 QToolButton {
@@ -287,6 +286,7 @@ QPushButton#PrimaryButton:disabled {
     color: #e5e7eb;
 }
 
+
 QPushButton#SecondaryButton {
     background: #e5e7eb;
     color: #111827;
@@ -305,6 +305,29 @@ QPushButton#SecondaryButton:pressed {
 }
 
 QPushButton#SecondaryButton:disabled {
+    background: #e5e7eb;
+    color: #9ca3af;
+}
+
+/* Alias: secondaryButton (objectName utilisé dans certaines pages) */
+QPushButton#secondaryButton {
+    background: #e5e7eb;
+    color: #111827;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-weight: 500;
+}
+
+QPushButton#secondaryButton:hover {
+    background: #d1d5db;
+}
+
+QPushButton#secondaryButton:pressed {
+    background: #cbd5e1;
+}
+
+QPushButton#secondaryButton:disabled {
     background: #e5e7eb;
     color: #9ca3af;
 }
@@ -406,7 +429,7 @@ QFrame#Card {
 QFrame#OfferCard {
     background: #ffffff;
     border: 1px solid #e5e7eb;
-    border-radius: 10px;
+    border-radius: 12px;
 }
 
 QFrame#OfferCard:hover {
@@ -434,21 +457,89 @@ QFrame#OfferCard[status="REFUSEE"] {
     border-left: 5px solid #ef4444;
 }
 
-
+/* Typography (compact) */
 QLabel#OfferCardTitle {
-    font-size: 15px;
-    font-weight: 700;
+    font-size: 14px;
+    font-weight: 800;
     color: #0f172a;
 }
 
 QLabel#OfferCardSubtitle {
-    font-size: 13px;
+    font-size: 12px;
     color: #334155;
 }
 
 QLabel#OfferCardMeta {
-    font-size: 12px;
+    font-size: 11px;
     color: #64748b;
+}
+
+/* Badges row */
+QFrame#OfferCardBadges {
+    background: transparent;
+}
+
+QLabel#OfferCardBadge {
+    background: #f1f5f9;
+    color: #0f172a;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+QLabel#OfferCardStat {
+    background: #ffffff;
+    color: #0f172a;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* Color badges by status property */
+QLabel#OfferCardStat[status="A_PREPARER"] {
+    background: #fff7ed;
+    border: 1px solid #fdba74;
+    color: #9a3412;
+}
+
+QLabel#OfferCardStat[status="ENVOYEE"] {
+    background: #eff6ff;
+    border: 1px solid #93c5fd;
+    color: #1d4ed8;
+}
+
+QLabel#OfferCardStat[status="ENTRETIEN"] {
+    background: #ecfdf5;
+    border: 1px solid #6ee7b7;
+    color: #047857;
+}
+
+QLabel#OfferCardStat[status="REFUSEE"] {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #b91c1c;
+}
+
+QLabel#OfferCardStat[status="RELANCE"] {
+    background: #f0f9ff;
+    border: 1px solid #7dd3fc;
+    color: #0369a1;
+}
+
+QLabel#OfferCardStat[status="ACCEPTEE"] {
+    background: #ecfdf5;
+    border: 1px solid #34d399;
+    color: #065f46;
+}
+
+/* Reduce default label margins inside OfferCard */
+QFrame#OfferCard QLabel {
+    margin: 0;
+    padding: 0;
 }
 
 /* Offer detail page */
