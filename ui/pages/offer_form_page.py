@@ -126,8 +126,8 @@ class OfferFormPage(QWidget):
     def set_import_error(self, message: str) -> None:
         self._set_info_message(message, kind="error")
         dump_path = self._extract_dump_path_from_error(message)
-        self._last_dump_path = dump_path
-        self.btn_open_dump.setVisible(bool(dump_path))
+        self._last_dump_path = dump_path or None
+        self.btn_open_dump.setVisible(bool(self._last_dump_path))
 
     # ---------------------------------------------------------------------
     # UI construction
@@ -503,6 +503,25 @@ class OfferFormPage(QWidget):
         # Force un repolish pour appliquer le QSS dynamiquement
         self.info_label.style().unpolish(self.info_label)
         self.info_label.style().polish(self.info_label)
+
+    def _extract_dump_path_from_error(self, message: str) -> str:
+        """Extrait un chemin de dump depuis un message d'erreur.
+
+        Format attendu (UrlImportService): "... Dump: /chemin/vers/import_xxx.txt"
+        """
+        if not message:
+            return ""
+
+        marker = "Dump:"
+        idx = message.rfind(marker)
+        if idx == -1:
+            return ""
+
+        path = message[idx + len(marker):].strip()
+        # Petites sécurités: on ne garde qu'une première ligne si le message est multi-lignes.
+        if "\n" in path:
+            path = path.split("\n", 1)[0].strip()
+        return path
 
     def _maybe_offer_dump_open(self, error_message: str) -> None:
         dump_path = self._extract_dump_path_from_error(error_message)
