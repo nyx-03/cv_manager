@@ -15,8 +15,12 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QPlainTextEdit,
     QTextEdit,
+    QTabWidget,
+    QScrollArea,
+    QCheckBox,
+    QSizePolicy,
 )
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl, QEvent
 from PySide6.QtGui import QDesktopServices
 
 
@@ -54,19 +58,47 @@ class SettingsWidget(QWidget):
         self._logs_timer.setInterval(1000)
         self._logs_timer.timeout.connect(self._on_refresh_logs_view)
         self._logs_timer.start()
+        self._logs_auto_refresh = True
         self._on_refresh_logs_view()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if hasattr(self, "_logs_timer") and getattr(self, "_logs_auto_refresh", False):
+            self._logs_timer.start()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        if hasattr(self, "_logs_timer"):
+            self._logs_timer.stop()
 
     # ---------------------------------------------------------
     # UI SETUP
     # ---------------------------------------------------------
     def _setup_ui(self):
-        root_layout = QVBoxLayout(self)
-        root_layout.setContentsMargins(12, 12, 12, 12)
-        root_layout.setSpacing(12)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(12)
 
-        # --- Card : Profil utilisateur ---
-        profile_card = QFrame(self)
-        profile_card.setObjectName("Card")
+        self.tabs = QTabWidget(self)
+        self.tabs.setObjectName("SettingsTabs")
+        main_layout.addWidget(self.tabs, 1)
+
+        def make_scroll_tab() -> tuple[QScrollArea, QWidget, QVBoxLayout]:
+            scroll = QScrollArea(self)
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.NoFrame)
+            container = QWidget(scroll)
+            layout = QVBoxLayout(container)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(12)
+            scroll.setWidget(container)
+            return scroll, container, layout
+
+        # --- TAB: Profil ---
+        profil_scroll, profil_container, profil_layout = make_scroll_tab()
+
+        profile_card = QFrame(profil_container)
+        profile_card.setObjectName("SettingsCard")
         profile_layout = QVBoxLayout(profile_card)
         profile_layout.setContentsMargins(12, 12, 12, 12)
         profile_layout.setSpacing(8)
@@ -75,7 +107,6 @@ class SettingsWidget(QWidget):
         profile_title.setProperty("heading", True)
         profile_layout.addWidget(profile_title)
 
-        # Nom complet
         row_name = QHBoxLayout()
         label_name = QLabel("Nom complet :")
         self.input_name = QLineEdit()
@@ -83,7 +114,6 @@ class SettingsWidget(QWidget):
         row_name.addWidget(self.input_name)
         profile_layout.addLayout(row_name)
 
-        # Email
         row_email = QHBoxLayout()
         label_email = QLabel("Email de contact :")
         self.input_email = QLineEdit()
@@ -91,7 +121,6 @@ class SettingsWidget(QWidget):
         row_email.addWidget(self.input_email)
         profile_layout.addLayout(row_email)
 
-        # Prénom
         row_firstname = QHBoxLayout()
         label_firstname = QLabel("Prénom :")
         self.input_firstname = QLineEdit()
@@ -99,7 +128,6 @@ class SettingsWidget(QWidget):
         row_firstname.addWidget(self.input_firstname)
         profile_layout.addLayout(row_firstname)
 
-        # Téléphone
         row_phone = QHBoxLayout()
         label_phone = QLabel("Téléphone :")
         self.input_phone = QLineEdit()
@@ -107,7 +135,6 @@ class SettingsWidget(QWidget):
         row_phone.addWidget(self.input_phone)
         profile_layout.addLayout(row_phone)
 
-        # Ville
         row_city = QHBoxLayout()
         label_city = QLabel("Ville :")
         self.input_city = QLineEdit()
@@ -115,7 +142,6 @@ class SettingsWidget(QWidget):
         row_city.addWidget(self.input_city)
         profile_layout.addLayout(row_city)
 
-        # Résumé / description (multi‑ligne)
         row_resume = QVBoxLayout()
         label_resume = QLabel("Résumé :")
         self.input_resume = QTextEdit()
@@ -123,7 +149,6 @@ class SettingsWidget(QWidget):
         row_resume.addWidget(self.input_resume)
         profile_layout.addLayout(row_resume)
 
-        # Liens externes
         row_linkedin = QHBoxLayout()
         label_linkedin = QLabel("LinkedIn :")
         self.input_linkedin = QLineEdit()
@@ -145,7 +170,6 @@ class SettingsWidget(QWidget):
         row_portfolio.addWidget(self.input_portfolio)
         profile_layout.addLayout(row_portfolio)
 
-        # Poste cible
         row_title = QHBoxLayout()
         label_title = QLabel("Poste cible :")
         self.input_target_title = QLineEdit()
@@ -154,11 +178,29 @@ class SettingsWidget(QWidget):
         row_title.addWidget(self.input_target_title)
         profile_layout.addLayout(row_title)
 
-        root_layout.addWidget(profile_card)
+        profil_layout.addWidget(profile_card)
+        profil_layout.addStretch(1)
 
-        # --- Card : Dossiers ---
-        paths_card = QFrame(self)
-        paths_card.setObjectName("Card")
+        # bottom buttons for this tab
+        profil_buttons = QHBoxLayout()
+        profil_buttons.addStretch(1)
+        btn_reset = QPushButton("Réinitialiser")
+        btn_reset.setObjectName("SecondaryButton")
+        btn_reset.clicked.connect(self.reset_settings)
+        profil_buttons.addWidget(btn_reset)
+        btn_save = QPushButton("Enregistrer")
+        btn_save.setObjectName("PrimaryButton")
+        btn_save.clicked.connect(self.save_settings)
+        profil_buttons.addWidget(btn_save)
+        profil_layout.addLayout(profil_buttons)
+
+        self.tabs.addTab(profil_scroll, "Profil")
+
+        # --- TAB: Templates ---
+        templates_scroll, templates_container, templates_root = make_scroll_tab()
+
+        paths_card = QFrame(templates_container)
+        paths_card.setObjectName("SettingsCard")
         paths_layout = QVBoxLayout(paths_card)
         paths_layout.setContentsMargins(12, 12, 12, 12)
         paths_layout.setSpacing(8)
@@ -167,37 +209,32 @@ class SettingsWidget(QWidget):
         paths_title.setProperty("heading", True)
         paths_layout.addWidget(paths_title)
 
-        # Dossier des lettres
         row_letters = QHBoxLayout()
         label_letters = QLabel("Dossier des lettres :")
         self.input_letters_dir = QLineEdit()
         btn_letters_browse = QPushButton("Parcourir")
         btn_letters_browse.setObjectName("SecondaryButton")
         btn_letters_browse.clicked.connect(self._browse_letters_dir)
-
         row_letters.addWidget(label_letters)
         row_letters.addWidget(self.input_letters_dir)
         row_letters.addWidget(btn_letters_browse)
         paths_layout.addLayout(row_letters)
 
-        # Dossier des modèles
         row_templates = QHBoxLayout()
         label_templates = QLabel("Dossier des modèles :")
         self.input_templates_dir = QLineEdit()
         btn_templates_browse = QPushButton("Parcourir")
         btn_templates_browse.setObjectName("SecondaryButton")
         btn_templates_browse.clicked.connect(self._browse_templates_dir)
-
         row_templates.addWidget(label_templates)
         row_templates.addWidget(self.input_templates_dir)
         row_templates.addWidget(btn_templates_browse)
         paths_layout.addLayout(row_templates)
 
-        root_layout.addWidget(paths_card)
+        templates_root.addWidget(paths_card)
 
-        # --- Card : Templates (Jinja2) ---
-        templates_card = QFrame(self)
-        templates_card.setObjectName("Card")
+        templates_card = QFrame(templates_container)
+        templates_card.setObjectName("SettingsCard")
         templates_layout = QVBoxLayout(templates_card)
         templates_layout.setContentsMargins(12, 12, 12, 12)
         templates_layout.setSpacing(8)
@@ -222,7 +259,6 @@ class SettingsWidget(QWidget):
         templates_layout.addLayout(row_tpl)
 
         row_tpl_btns = QHBoxLayout()
-
         self.btn_tpl_import = QPushButton("Importer")
         self.btn_tpl_import.setObjectName("PrimaryButton")
         self.btn_tpl_import.clicked.connect(self._on_import_template)
@@ -253,11 +289,16 @@ class SettingsWidget(QWidget):
         self.tpl_status.setVisible(False)
         templates_layout.addWidget(self.tpl_status)
 
-        root_layout.addWidget(templates_card)
+        templates_root.addWidget(templates_card)
 
-        # --- Card : Préférences ---
-        prefs_card = QFrame(self)
-        prefs_card.setObjectName("Card")
+        templates_root.addStretch(1)
+        self.tabs.addTab(templates_scroll, "Templates")
+
+        # --- TAB: Préférences ---
+        prefs_scroll, prefs_container, prefs_root = make_scroll_tab()
+
+        prefs_card = QFrame(prefs_container)
+        prefs_card.setObjectName("SettingsCard")
         prefs_layout = QVBoxLayout(prefs_card)
         prefs_layout.setContentsMargins(12, 12, 12, 12)
         prefs_layout.setSpacing(8)
@@ -266,7 +307,6 @@ class SettingsWidget(QWidget):
         prefs_title.setProperty("heading", True)
         prefs_layout.addWidget(prefs_title)
 
-        # Thème (placeholder pour l'instant)
         row_theme = QHBoxLayout()
         label_theme = QLabel("Thème :")
         self.combo_theme = QComboBox()
@@ -276,7 +316,6 @@ class SettingsWidget(QWidget):
         row_theme.addWidget(self.combo_theme)
         prefs_layout.addLayout(row_theme)
 
-        # Nombre de candidatures récentes à afficher sur le dashboard
         row_recent_count = QHBoxLayout()
         label_recent = QLabel("Dernières candidatures sur le dashboard :")
         self.spin_recent_count = QSpinBox()
@@ -287,11 +326,16 @@ class SettingsWidget(QWidget):
         row_recent_count.addWidget(self.spin_recent_count)
         prefs_layout.addLayout(row_recent_count)
 
-        root_layout.addWidget(prefs_card)
+        prefs_root.addWidget(prefs_card)
+        prefs_root.addStretch(1)
+        self.tabs.addTab(prefs_scroll, "Préférences")
 
-        # --- Card : Maintenance ---
-        maintenance_card = QFrame(self)
-        maintenance_card.setObjectName("Card")
+        # --- TAB: Maintenance ---
+        maint_scroll, maint_container, maint_root = make_scroll_tab()
+
+        # Maintenance / DB
+        maintenance_card = QFrame(maint_container)
+        maintenance_card.setObjectName("SettingsCard")
         maintenance_layout = QVBoxLayout(maintenance_card)
         maintenance_layout.setContentsMargins(12, 12, 12, 12)
         maintenance_layout.setSpacing(8)
@@ -308,7 +352,6 @@ class SettingsWidget(QWidget):
         maintenance_help.setProperty("muted", True)
         maintenance_layout.addWidget(maintenance_help)
 
-        # --- Emplacement de la base de données ---
         row_db_path = QHBoxLayout()
         label_db_path = QLabel("Base de données :")
         self.db_path_value = QLineEdit()
@@ -329,9 +372,26 @@ class SettingsWidget(QWidget):
         row_db_path.addWidget(btn_reveal_db_file)
         maintenance_layout.addLayout(row_db_path)
 
-        # --- Logs ---
+        btn_reset_db = QPushButton("Réinitialiser la base de données")
+        btn_reset_db.setObjectName("DangerButton")
+        btn_reset_db.clicked.connect(self._on_reset_database_clicked)
+        maintenance_layout.addWidget(btn_reset_db)
+
+        maint_root.addWidget(maintenance_card)
+
+        # Logs
+        logs_card = QFrame(maint_container)
+        logs_card.setObjectName("SettingsCard")
+        logs_layout = QVBoxLayout(logs_card)
+        logs_layout.setContentsMargins(12, 12, 12, 12)
+        logs_layout.setSpacing(8)
+
+        logs_title = QLabel("Logs")
+        logs_title.setProperty("heading", True)
+        logs_layout.addWidget(logs_title)
+
         row_logs_path = QHBoxLayout()
-        label_logs_path = QLabel("Logs :")
+        label_logs_path = QLabel("Fichier :")
         self.logs_path_value = QLineEdit()
         self.logs_path_value.setReadOnly(True)
         self.logs_path_value.setPlaceholderText("Chemin du fichier de log…")
@@ -340,7 +400,7 @@ class SettingsWidget(QWidget):
         btn_open_logs_folder.setObjectName("SecondaryButton")
         btn_open_logs_folder.clicked.connect(self._on_open_logs_folder)
 
-        btn_open_log_file = QPushButton("Ouvrir le fichier")
+        btn_open_log_file = QPushButton("Ouvrir")
         btn_open_log_file.setObjectName("SecondaryButton")
         btn_open_log_file.clicked.connect(self._on_open_log_file)
 
@@ -348,66 +408,61 @@ class SettingsWidget(QWidget):
         row_logs_path.addWidget(self.logs_path_value, 1)
         row_logs_path.addWidget(btn_open_logs_folder)
         row_logs_path.addWidget(btn_open_log_file)
-        maintenance_layout.addLayout(row_logs_path)
+        logs_layout.addLayout(row_logs_path)
 
-        # Vue logs (lecture seule)
         self.logs_view = QPlainTextEdit()
         self.logs_view.setReadOnly(True)
         self.logs_view.setPlaceholderText("Les logs s’afficheront ici…")
         self.logs_view.setObjectName("LogsViewer")
-        self.logs_view.setMinimumHeight(180)
-        maintenance_layout.addWidget(self.logs_view)
+        self.logs_view.setMinimumHeight(220)
+        logs_layout.addWidget(self.logs_view)
 
         row_logs_actions = QHBoxLayout()
+
+        self.chk_logs_auto = QCheckBox("Auto‑rafraîchissement")
+        self.chk_logs_auto.setChecked(True)
+        self.chk_logs_auto.toggled.connect(self._on_toggle_logs_auto_refresh)
+        row_logs_actions.addWidget(self.chk_logs_auto)
+
+        row_logs_actions.addStretch(1)
 
         btn_refresh_logs = QPushButton("Rafraîchir")
         btn_refresh_logs.setObjectName("SecondaryButton")
         btn_refresh_logs.clicked.connect(self._on_refresh_logs_view)
         row_logs_actions.addWidget(btn_refresh_logs)
 
-        btn_clear_logs = QPushButton("Vider le fichier")
+        btn_clear_logs = QPushButton("Vider")
         btn_clear_logs.setObjectName("SecondaryButton")
         btn_clear_logs.clicked.connect(self._on_clear_log_file)
         row_logs_actions.addWidget(btn_clear_logs)
 
-        row_logs_actions.addStretch(1)
-        maintenance_layout.addLayout(row_logs_actions)
-
-        btn_delete_log = QPushButton("Supprimer le fichier de log")
+        btn_delete_log = QPushButton("Supprimer")
         btn_delete_log.setObjectName("DangerButton")
         btn_delete_log.clicked.connect(self._on_delete_log_file)
-        maintenance_layout.addWidget(btn_delete_log)
+        row_logs_actions.addWidget(btn_delete_log)
 
-        btn_reset_db = QPushButton("Réinitialiser la base de données")
-        btn_reset_db.setObjectName("DangerButton")
-        btn_reset_db.clicked.connect(self._on_reset_database_clicked)
-        maintenance_layout.addWidget(btn_reset_db)
+        logs_layout.addLayout(row_logs_actions)
 
-        root_layout.addWidget(maintenance_card)
+        maint_root.addWidget(logs_card)
+        maint_root.addStretch(1)
 
-        # --- Message de statut ---
+        self.tabs.addTab(maint_scroll, "Maintenance")
+
+        # --- Message de statut (global) ---
         self.status_label = QLabel("")
         self.status_label.setObjectName("SettingsStatusLabel")
         self.status_label.setVisible(False)
-        root_layout.addWidget(self.status_label)
+        main_layout.addWidget(self.status_label)
 
-        # --- Boutons en bas ---
-        buttons_layout = QHBoxLayout()
-        buttons_layout.addStretch()
-
-        btn_reset = QPushButton("Réinitialiser")
-        btn_reset.setObjectName("SecondaryButton")
-        btn_reset.clicked.connect(self.reset_settings)
-        buttons_layout.addWidget(btn_reset)
-
-        btn_save = QPushButton("Enregistrer les paramètres")
-        btn_save.setObjectName("PrimaryButton")
-        btn_save.clicked.connect(self.save_settings)
-        buttons_layout.addWidget(btn_save)
-
-        root_layout.addLayout(buttons_layout)
-
-        root_layout.addStretch()
+    def _on_toggle_logs_auto_refresh(self, checked: bool) -> None:
+        self._logs_auto_refresh = bool(checked)
+        if not hasattr(self, "_logs_timer"):
+            return
+        if self._logs_auto_refresh and self.isVisible():
+            self._logs_timer.start()
+            self._on_refresh_logs_view()
+        else:
+            self._logs_timer.stop()
 
     # ---------------------------------------------------------
     # ACTIONS / LOGIQUE

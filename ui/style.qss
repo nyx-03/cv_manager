@@ -806,3 +806,160 @@ QLabel#formInfo[kind="error"] {
     color: #b91c1c;
     border: 1px solid #fecaca;
 }
+/* =============================
+   SETTINGS (Tabs + Cards + Logs)
+   ============================= */
+
+/* Tabs container */
+QTabWidget#SettingsTabs {
+    background: transparent;
+}
+
+QTabWidget#SettingsTabs::pane {
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 10px;
+}
+
+/* Tabs look (scoped to SettingsTabs) */
+QTabWidget#SettingsTabs QTabBar::tab {
+    background: #e5e7eb;
+    color: #111827;
+    border: 1px solid #d1d5db;
+    border-bottom: none;
+    padding: 8px 12px;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    margin-right: 6px;
+    font-weight: 700;
+}
+
+QTabWidget#SettingsTabs QTabBar::tab:hover {
+    background: #dbeafe;
+}
+
+QTabWidget#SettingsTabs QTabBar::tab:selected {
+    background: #ffffff;
+    color: #0f172a;
+    border-color: #e5e7eb;
+}
+
+/* Section titles */
+QLabel#SettingsSectionTitle {
+    font-size: 15px;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+QLabel#SettingsSectionHint {
+    font-size: 12px;
+    color: #64748b;
+}
+
+/* Cards used in Settings */
+QFrame#SettingsCard {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 12px;
+}
+
+QFrame#SettingsCard:hover {
+    border: 1px solid #cbd5e1;
+}
+
+/* Inline separators */
+QFrame#SettingsSeparator {
+    background: #e5e7eb;
+    border: none;
+    min-height: 1px;
+    max-height: 1px;
+}
+
+/* Logs viewer */
+QPlainTextEdit#LogsViewer {
+    background: #0b1220;
+    color: #e5e7eb;
+    border: 1px solid #1f2937;
+    border-radius: 12px;
+    padding: 10px;
+    font-family: Menlo;
+    font-size: 12px;
+    selection-background-color: #1d4ed8;
+}
+
+QPlainTextEdit#LogsViewer:focus {
+    border: 1px solid #2563eb;
+}
+
+/* Small action buttons inside Settings cards */
+QPushButton#SettingsSmallButton {
+    background: #e5e7eb;
+    color: #0f172a;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-weight: 700;
+}
+
+QPushButton#SettingsSmallButton:hover {
+    background: #dbeafe;
+    border: 1px solid #93c5fd;
+}
+
+QPushButton#SettingsSmallButton:pressed {
+    background: #bfdbfe;
+}
+
+QPushButton#SettingsDangerSmallButton {
+    background: #fff1f2;
+    color: #9f1239;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-weight: 800;
+}
+
+QPushButton#SettingsDangerSmallButton:hover {
+    background: #ffe4e6;
+    border: 1px solid #fda4af;
+}
+
+QPushButton#SettingsDangerSmallButton:pressed {
+    background: #fecdd3;
+}
+
+/* Checkbox / switches alignment */
+QCheckBox#SettingsToggle {
+    spacing: 8px;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+QCheckBox#SettingsToggle::indicator {
+    width: 18px;
+    height: 18px;
+}
+
+QCheckBox#SettingsToggle::indicator:unchecked {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+}
+
+QCheckBox#SettingsToggle::indicator:checked {
+    background: #2563eb;
+    border: 1px solid #1d4ed8;
+    border-radius: 4px;
+}
+
+/* ScrollArea used in Settings tabs */
+QScrollArea#SettingsScroll {
+    background: transparent;
+    border: none;
+}
+
+QScrollArea#SettingsScroll QWidget {
+    background: transparent;
+}
