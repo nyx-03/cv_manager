@@ -1,6 +1,6 @@
 # 📄 CV Manager
 
-![Python](https://img.shields.io/badge/Python-3.13-blue)
+![Python](https://img.shields.io/badge/Python-3.14-blue)
 ![PySide6](https://img.shields.io/badge/PySide6-Qt%20GUI-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Status](https://img.shields.io/badge/Status-Active-success)
@@ -28,6 +28,14 @@
 - Génération et édition de lettres directement depuis la vue offre
 - Gestion améliorée des cartes (offres / lettres) avec interactions claires
 
+### 🆕 Nouveautés récentes
+
+- Passage officiel à **Python 3.14**
+- Mise en place d’un **système de logs centralisé** (fichier + console)
+- Intégration d’une **vue Logs** dans la page Paramètres
+- Possibilité de **supprimer et ouvrir le dossier des logs** depuis l’UI
+- Préparation de l’application à une meilleure observabilité (debug, erreurs import, génération de lettres)
+
 ### 🔧 Améliorations techniques
 
 - Séparation claire **UI / Services / Modèles**
@@ -38,6 +46,8 @@
 - Correction et sécurisation des templates Jinja2
 - Meilleure gestion des événements UI (clics cartes vs boutons)
 - Nettoyage et stabilisation de `main_window` et des pages associées
+- Utilisation des nouveautés syntaxiques et typing de **Python 3.14**
+- Centralisation du logging applicatif (`logging_setup`)
 
 ### 🐛 Correctifs notables
 
@@ -94,7 +104,7 @@
 
 ## 🖥 Technologies utilisées
 
-* **Python 3.13**
+* **Python 3.14**
 * **PySide6**
 * **SQLAlchemy**
 * **HTML / CSS**
@@ -179,6 +189,8 @@ La roadmap ci-dessous présente les évolutions envisagées pour CV Manager, par
 * [ ] Historique et versionning des lettres de motivation
 * [ ] Recherche globale dans les offres et candidatures
 * [ ] Filtres avancés (statut, entreprise, date, source)
+* [ ] Modification / édition complète des annonces existantes
+* [ ] Correction des bugs restants lors de la création et génération des lettres
 
 ---
 
