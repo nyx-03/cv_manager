@@ -175,15 +175,25 @@ class Offre(Base):
     type_contrat = Column(String(100), nullable=True)
     texte_annonce = Column(Text, nullable=True)          # texte collé
 
-    candidatures = relationship("Candidature", back_populates="offre", cascade="all, delete-orphan")
-    lettres = relationship("LettreMotivation", back_populates="offre", cascade="all, delete-orphan")
+    candidatures = relationship(
+        "Candidature",
+        back_populates="offre",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    lettres = relationship(
+        "LettreMotivation",
+        back_populates="offre",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class Candidature(Base):
     __tablename__ = "candidature"
 
     id = Column(Integer, primary_key=True)
-    offre_id = Column(Integer, ForeignKey("offre.id"), nullable=False)
+    offre_id = Column(Integer, ForeignKey("offre.id", ondelete="CASCADE"), nullable=False)
     lettre_id = Column(Integer, ForeignKey("lettre_motivation.id"), nullable=True, index=True)
 
     date_envoi = Column(Date, nullable=True)
@@ -200,7 +210,7 @@ class LettreMotivation(Base):
     __tablename__ = "lettre_motivation"
 
     id = Column(Integer, primary_key=True)
-    offre_id = Column(Integer, ForeignKey("offre.id"), nullable=False, index=True)
+    offre_id = Column(Integer, ForeignKey("offre.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # Versionning / état
     version = Column(Integer, nullable=False, default=1)
