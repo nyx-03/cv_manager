@@ -9,11 +9,16 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QComboBox,
     QSpinBox,
+    QMessageBox,
+    QInputDialog,
 )
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QTextEdit
-from services.profile_service import ensure_profile, update_profile, ProfileUpdateData
+
+
+# Database helpers
+from db import get_db_path, reset_database
 
 # Templates management
 from services.letters_service import (
@@ -40,6 +45,7 @@ class SettingsWidget(QWidget):
 
         self._setup_ui()
         self.load_settings()
+        self._refresh_db_path_ui()
 
     # ---------------------------------------------------------
     # UI SETUP
@@ -274,6 +280,53 @@ class SettingsWidget(QWidget):
 
         root_layout.addWidget(prefs_card)
 
+        # --- Card : Maintenance ---
+        maintenance_card = QFrame(self)
+        maintenance_card.setObjectName("Card")
+        maintenance_layout = QVBoxLayout(maintenance_card)
+        maintenance_layout.setContentsMargins(12, 12, 12, 12)
+        maintenance_layout.setSpacing(8)
+
+        maintenance_title = QLabel("Maintenance")
+        maintenance_title.setProperty("heading", True)
+        maintenance_layout.addWidget(maintenance_title)
+
+        maintenance_help = QLabel(
+            "⚠️ Cette action est destructive et supprimera toutes les données locales.\n"
+            "Après réinitialisation, l'application devra être redémarrée."
+        )
+        maintenance_help.setWordWrap(True)
+        maintenance_help.setProperty("muted", True)
+        maintenance_layout.addWidget(maintenance_help)
+
+        # --- Emplacement de la base de données ---
+        row_db_path = QHBoxLayout()
+        label_db_path = QLabel("Base de données :")
+        self.db_path_value = QLineEdit()
+        self.db_path_value.setReadOnly(True)
+        self.db_path_value.setPlaceholderText("Chemin de la base de données…")
+
+        btn_open_db_folder = QPushButton("Ouvrir le dossier")
+        btn_open_db_folder.setObjectName("SecondaryButton")
+        btn_open_db_folder.clicked.connect(self._on_open_db_folder)
+
+        btn_reveal_db_file = QPushButton("Révéler le fichier")
+        btn_reveal_db_file.setObjectName("SecondaryButton")
+        btn_reveal_db_file.clicked.connect(self._on_reveal_db_file)
+
+        row_db_path.addWidget(label_db_path)
+        row_db_path.addWidget(self.db_path_value, 1)
+        row_db_path.addWidget(btn_open_db_folder)
+        row_db_path.addWidget(btn_reveal_db_file)
+        maintenance_layout.addLayout(row_db_path)
+
+        btn_reset_db = QPushButton("Réinitialiser la base de données")
+        btn_reset_db.setObjectName("DangerButton")
+        btn_reset_db.clicked.connect(self._on_reset_database_clicked)
+        maintenance_layout.addWidget(btn_reset_db)
+
+        root_layout.addWidget(maintenance_card)
+
         # --- Message de statut ---
         self.status_label = QLabel("")
         self.status_label.setObjectName("SettingsStatusLabel")
@@ -347,6 +400,8 @@ class SettingsWidget(QWidget):
         self.input_templates_dir.setText("")
         self.combo_theme.setCurrentIndex(0)
         self.spin_recent_count.setValue(10)
+        if hasattr(self, "db_path_value"):
+            self._refresh_db_path_ui()
 
     def save_settings(self):
         if not self._require_session():
@@ -381,6 +436,101 @@ class SettingsWidget(QWidget):
         self.status_label.setText(message)
         self.status_label.setVisible(True)
         QTimer.singleShot(duration_ms, lambda: self.status_label.setVisible(False))
+
+
+
+
+    def _refresh_db_path_ui(self) -> None:
+        """Met à jour l'affichage du chemin de la DB dans la carte Maintenance."""
+        try:
+            db_path = get_db_path()
+            self.db_path_value.setText(str(db_path))
+            self.db_path_value.setToolTip(str(db_path))
+        except Exception:
+            self.db_path_value.setText("(chemin DB indisponible)")
+            self.db_path_value.setToolTip("")
+
+    def _on_open_db_folder(self) -> None:
+        """Ouvre le dossier contenant la base de données dans l'explorateur."""
+        try:
+            db_path = get_db_path()
+            folder = db_path.parent
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+        except Exception as e:
+            QMessageBox.warning(self, "Ouverture du dossier", f"Impossible d'ouvrir le dossier :\n\n{e}")
+
+    def _on_reveal_db_file(self) -> None:
+        """Révèle le fichier DB dans l'explorateur (macOS: Finder sélectionne généralement le fichier)."""
+        try:
+            db_path = get_db_path()
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(db_path)))
+        except Exception as e:
+            QMessageBox.warning(self, "Révéler la DB", f"Impossible de révéler le fichier :\n\n{e}")
+
+    def _on_reset_database_clicked(self):
+        """Action dangereuse : supprime le fichier sqlite et invite à relancer l'app."""
+        if not self._require_session():
+            return
+
+        db_path = get_db_path()
+        if db_path is None:
+            QMessageBox.warning(self, "Réinitialisation", "Impossible de déterminer le chemin de la base de données.")
+            return
+
+        if not db_path.exists():
+            QMessageBox.information(
+                self,
+                "Réinitialisation",
+                f"Aucune base de données trouvée à cet emplacement :\n{db_path}",
+            )
+            return
+
+        # 1) Confirmation standard
+        confirm = QMessageBox.question(
+            self,
+            "Réinitialiser la base de données",
+            "Cette action va SUPPRIMER la base de données locale.\n\n"
+            "Toutes les offres, candidatures et lettres enregistrées seront perdues.\n\n"
+            "Voulez-vous continuer ?",
+            QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        # 2) Confirmation par saisie
+        text, ok = QInputDialog.getText(
+            self,
+            "Confirmation requise",
+            "Tapez SUPPRIMER pour confirmer :",
+        )
+        if not ok or text.strip().upper() != "SUPPRIMER":
+            self._show_status_message("Réinitialisation annulée.")
+            return
+
+        try:
+            reset_database()
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Réinitialisation",
+                f"La suppression a rencontré une erreur :\n\n{e}",
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            "Réinitialisation terminée",
+            "Base de données supprimée.\n\n"
+            "Pour repartir sur une base propre, relance l'application.",
+        )
+        if hasattr(self, "db_path_value"):
+            self._refresh_db_path_ui()
+        try:
+            self.session = None
+        except Exception:
+            pass
+        self._show_status_message("Base de données supprimée. Relance l'application.", duration_ms=6000)
 
 
     # ---------------------------------------------------------

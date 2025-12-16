@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+import sys
+import tempfile
+
 import json
 import re
 from urllib.parse import urlparse, urlunparse
@@ -26,6 +30,41 @@ USER_AGENT = (
 )
 
 TIMEOUT = 10
+
+
+# Dump debug files are disabled by default and are NEVER written in packaged apps.
+# Enable explicitly in dev by setting CVM_IMPORT_DEBUG=1
+
+def _is_frozen_app() -> bool:
+    return bool(getattr(sys, "frozen", False))
+
+
+def _import_debug_enabled() -> bool:
+    # Never write dumps in packaged builds
+    if _is_frozen_app():
+        return False
+    return os.getenv("CVM_IMPORT_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _get_debug_dump_dir() -> Path:
+    """Return a writable directory for debug dumps (dev only)."""
+    base = Path(tempfile.gettempdir()) / "cv_manager" / "imports_debug"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def _maybe_write_import_dump_txt(*, url: str, html: str, og_raw: Dict[str, str], jsonld_raw: list[str], data: Dict[str, str], soup: BeautifulSoup) -> Path | None:
+    """Write a dump file only when debugging is enabled.
+
+    Returns the dump path when created, otherwise None.
+    Never raises: failures to write dumps must not break the import flow.
+    """
+    if not _import_debug_enabled():
+        return None
+    try:
+        return _write_import_dump_txt(url=url, html=html, og_raw=og_raw, jsonld_raw=jsonld_raw, data=data, soup=soup)
+    except Exception:
+        return None
 
 # --- Shared requests session and headers for robustness ---
 SESSION = requests.Session()
@@ -144,7 +183,7 @@ def _parse_offer_html(*, html: str, url: str, final_url: str) -> Dict[str, str]:
     # Si on n'a pas de JobPosting ni de détail, il est très probable qu'on soit sur une page de liste,
     # une page SEO, un shell JS ou une page consentement. On évite de remplir avec du faux.
     if (not data.get("_has_jobposting")) and (not data.get("_has_detail")) and _looks_like_listing_or_shell(soup, data):
-        dump_path = _write_import_dump_txt(
+        dump_path = _maybe_write_import_dump_txt(
             url=url,
             html=html,
             og_raw=og_raw,
@@ -152,13 +191,17 @@ def _parse_offer_html(*, html: str, url: str, final_url: str) -> Dict[str, str]:
             data=data,
             soup=soup,
         )
-        data["_dump_path"] = str(dump_path)
-        raise UrlImportError(
+        if dump_path:
+            data["_dump_path"] = str(dump_path)
+
+        msg = (
             "Je n'ai pas récupéré une page 'détail d'annonce' (probablement une liste, une page SEO, "
             "une page de consentement ou un contenu chargé en JavaScript). "
-            "Essaie avec une URL de détail d'annonce (pas une liste) ou utilise le mode navigateur intégré. "
-            f"Dump: {dump_path}"
+            "Essaie avec une URL de détail d'annonce (pas une liste) ou utilise le mode navigateur intégré."
         )
+        if dump_path:
+            msg += f" Dump: {dump_path}"
+        raise UrlImportError(msg)
 
     # Description: JSON-LD > OG > texte visible
     if not data.get("texte_annonce"):
@@ -175,7 +218,7 @@ def _parse_offer_html(*, html: str, url: str, final_url: str) -> Dict[str, str]:
         targeted = _extract_targeted_job_text(soup)
         data["texte_annonce"] = targeted or _extract_visible_text(soup)
 
-    dump_path = _write_import_dump_txt(
+    dump_path = _maybe_write_import_dump_txt(
         url=url,
         html=html,
         og_raw=og_raw,
@@ -183,7 +226,8 @@ def _parse_offer_html(*, html: str, url: str, final_url: str) -> Dict[str, str]:
         data=data,
         soup=soup,
     )
-    data["_dump_path"] = str(dump_path)
+    if dump_path:
+        data["_dump_path"] = str(dump_path)
 
     return data
 
@@ -633,68 +677,70 @@ def _collect_jsonld_raw(soup: BeautifulSoup) -> list[str]:
     return raws
 
 
-def _write_import_dump_txt(*, url: str, html: str, og_raw: Dict[str, str], jsonld_raw: list[str], data: Dict[str, str], soup: BeautifulSoup) -> Path:
+def _write_import_dump_txt(*, url: str, html: str, og_raw: Dict[str, str], jsonld_raw: list[str], data: Dict[str, str], soup: BeautifulSoup) -> Path | None:
     """Écrit un fichier .txt avec tout ce qu'on arrive à extraire.
 
     Objectif: diagnostiquer pourquoi le pré-remplissage n'est pas fidèle.
     """
-    dumps_dir = Path.cwd() / "imports_debug"
-    dumps_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        dumps_dir = _get_debug_dump_dir()
 
-    domain = urlparse(url).netloc.replace(":", "_") or "unknown"
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = dumps_dir / f"import_{domain}_{ts}.txt"
+        domain = urlparse(url).netloc.replace(":", "_") or "unknown"
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        path = dumps_dir / f"import_{domain}_{ts}.txt"
 
-    title = soup.title.string.strip() if soup.title and soup.title.string else ""
+        title = soup.title.string.strip() if soup.title and soup.title.string else ""
 
-    def w(line: str = ""):
-        f.write(line + "\n")
+        def w(line: str = ""):
+            f.write(line + "\n")
 
-    with path.open("w", encoding="utf-8") as f:
-        w("CV Manager – Import debug dump")
-        w(f"URL: {url}")
-        w(f"Date: {datetime.now().isoformat(timespec='seconds')}")
-        w(f"Title: {title}")
-        w(f"HTML length: {len(html)}")
-        w("")
+        with path.open("w", encoding="utf-8") as f:
+            w("CV Manager – Import debug dump")
+            w(f"URL: {url}")
+            w(f"Date: {datetime.now().isoformat(timespec='seconds')}")
+            w(f"Title: {title}")
+            w(f"HTML length: {len(html)}")
+            w("")
 
-        w("=== EXTRACTED FIELDS (prefill data) ===")
-        for k in sorted(data.keys()):
-            # Ne pas afficher le texte complet en double si énorme
-            v = data.get(k, "")
-            if k == "texte_annonce" and isinstance(v, str) and len(v) > 1200:
-                w(f"{k}: {v[:1200]}… (len={len(v)})")
+            w("=== EXTRACTED FIELDS (prefill data) ===")
+            for k in sorted(data.keys()):
+                # Ne pas afficher le texte complet en double si énorme
+                v = data.get(k, "")
+                if k == "texte_annonce" and isinstance(v, str) and len(v) > 1200:
+                    w(f"{k}: {v[:1200]}… (len={len(v)})")
+                else:
+                    w(f"{k}: {v}")
+            w("")
+
+            w("=== OPENGRAPH / TWITTER METAS (raw) ===")
+            if og_raw:
+                for k in sorted(og_raw.keys()):
+                    w(f"{k}: {og_raw[k]}")
             else:
-                w(f"{k}: {v}")
-        w("")
+                w("(none)")
+            w("")
 
-        w("=== OPENGRAPH / TWITTER METAS (raw) ===")
-        if og_raw:
-            for k in sorted(og_raw.keys()):
-                w(f"{k}: {og_raw[k]}")
-        else:
-            w("(none)")
-        w("")
+            w("=== JSON-LD SCRIPTS (raw) ===")
+            if jsonld_raw:
+                for i, raw in enumerate(jsonld_raw, start=1):
+                    w(f"--- JSON-LD #{i} ---")
+                    w(raw)
+                    w("")
+            else:
+                w("(none)")
+            w("")
 
-        w("=== JSON-LD SCRIPTS (raw) ===")
-        if jsonld_raw:
-            for i, raw in enumerate(jsonld_raw, start=1):
-                w(f"--- JSON-LD #{i} ---")
-                w(raw)
-                w("")
-        else:
-            w("(none)")
-        w("")
+            w("=== VISIBLE TEXT (first 5000 chars) ===")
+            parsed_soup = BeautifulSoup(html, "html.parser")
+            targeted = _extract_targeted_job_text(parsed_soup)
+            if targeted:
+                w("(targeted) " + targeted)
+            else:
+                w(_extract_visible_text(parsed_soup))
 
-        w("=== VISIBLE TEXT (first 5000 chars) ===")
-        parsed_soup = BeautifulSoup(html, "html.parser")
-        targeted = _extract_targeted_job_text(parsed_soup)
-        if targeted:
-            w("(targeted) " + targeted)
-        else:
-            w(_extract_visible_text(parsed_soup))
-
-    return path
+        return path
+    except Exception:
+        return None
 
 
 def _as_text(value) -> str:

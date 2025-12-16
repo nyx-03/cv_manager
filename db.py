@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker, declarative_base, Session
 
-import os
 import sys
 import importlib
 from pathlib import Path
+import os
+
+
+def is_frozen_app() -> bool:
+    """True when running from a PyInstaller bundle (.app/.exe)."""
+    return bool(getattr(sys, "frozen", False)) or bool(getattr(sys, "_MEIPASS", None))
+
 
 def _get_app_data_dir() -> Path:
     """
@@ -24,8 +30,41 @@ def _get_app_data_dir() -> Path:
         fallback.mkdir(parents=True, exist_ok=True)
         return fallback
 
+
 APP_DATA_DIR = _get_app_data_dir()
 DB_PATH = APP_DATA_DIR / "cv_manager.sqlite"
+
+
+# ---- Helper functions for DB path and reset ----
+def get_db_path() -> Path:
+    """Return the absolute path to the SQLite database file."""
+    return DB_PATH
+
+
+def reset_database() -> None:
+    """Delete the SQLite database and related WAL/SHM files if they exist."""
+    try:
+        engine.dispose()
+    except Exception:
+        pass
+
+    for suffix in ("", "-wal", "-shm"):
+        p = Path(str(DB_PATH) + suffix)
+        try:
+            if p.exists():
+                p.unlink()
+        except Exception:
+            pass
+
+    # Reset initialization flag so DB can be recreated on next start / next session.
+    global _DB_INITIALIZED
+    _DB_INITIALIZED = False
+
+
+def reset_database_and_init() -> None:
+    """Reset DB files then recreate schema immediately."""
+    reset_database()
+    init_db()
 
 
 def resource_path(relative: str) -> Path:
@@ -36,14 +75,16 @@ def resource_path(relative: str) -> Path:
     return Path(__file__).resolve().parent / relative
 
 
-# Optional migration/seed: if a DB exists in bundled resources or in ./data/, copy it once
-# Priority: bundled seed (PyInstaller datas) -> local dev ./data
+# Optional migration/seed: copy a seed DB once (useful in dev).
+# In packaged apps, this is disabled by default to avoid shipping a dev DB.
+# Enable explicitly with environment variable: CVM_SEED_DB=1
 seed_candidates = [
     resource_path("data/cv_manager.sqlite"),
     Path.cwd() / "data" / "cv_manager.sqlite",
 ]
 
-if not DB_PATH.exists():
+_seed_enabled = (not is_frozen_app()) or (os.environ.get("CVM_SEED_DB", "").strip().lower() in {"1", "true", "yes", "on"})
+if _seed_enabled and (not DB_PATH.exists()):
     for seed in seed_candidates:
         try:
             if seed.exists():
@@ -52,6 +93,7 @@ if not DB_PATH.exists():
         except Exception:
             # If copy fails, we'll fall back to creating an empty DB and creating tables.
             pass
+
 
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
@@ -113,7 +155,7 @@ def init_db() -> None:
         # Do not raise here: we prefer the UI to show an error rather than immediate exit.
 
 
-def get_session():
+def get_session() -> Session:
     """Convenience helper returning a new SessionLocal after ensuring DB is initialized."""
     init_db()
     return SessionLocal()
