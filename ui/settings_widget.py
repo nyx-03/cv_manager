@@ -1,3 +1,5 @@
+from pathlib import Path
+import os
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -11,10 +13,11 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QMessageBox,
     QInputDialog,
+    QPlainTextEdit,
+    QTextEdit,
 )
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QTextEdit
 
 
 # Database helpers
@@ -37,7 +40,7 @@ class SettingsWidget(QWidget):
     La persistance (JSON, base, etc.) pourra être branchée plus tard.
     """
 
-    def __init__(self, session=None, parent=None):
+    def __init__(self, session=None, parent: QWidget | None = None):
         super().__init__(parent)
         self.session = session
         self._templates: list[str] = []
@@ -46,6 +49,12 @@ class SettingsWidget(QWidget):
         self._setup_ui()
         self.load_settings()
         self._refresh_db_path_ui()
+        self._refresh_logs_path_ui()
+        self._logs_timer = QTimer(self)
+        self._logs_timer.setInterval(1000)
+        self._logs_timer.timeout.connect(self._on_refresh_logs_view)
+        self._logs_timer.start()
+        self._on_refresh_logs_view()
 
     # ---------------------------------------------------------
     # UI SETUP
@@ -320,6 +329,55 @@ class SettingsWidget(QWidget):
         row_db_path.addWidget(btn_reveal_db_file)
         maintenance_layout.addLayout(row_db_path)
 
+        # --- Logs ---
+        row_logs_path = QHBoxLayout()
+        label_logs_path = QLabel("Logs :")
+        self.logs_path_value = QLineEdit()
+        self.logs_path_value.setReadOnly(True)
+        self.logs_path_value.setPlaceholderText("Chemin du fichier de log…")
+
+        btn_open_logs_folder = QPushButton("Ouvrir le dossier")
+        btn_open_logs_folder.setObjectName("SecondaryButton")
+        btn_open_logs_folder.clicked.connect(self._on_open_logs_folder)
+
+        btn_open_log_file = QPushButton("Ouvrir le fichier")
+        btn_open_log_file.setObjectName("SecondaryButton")
+        btn_open_log_file.clicked.connect(self._on_open_log_file)
+
+        row_logs_path.addWidget(label_logs_path)
+        row_logs_path.addWidget(self.logs_path_value, 1)
+        row_logs_path.addWidget(btn_open_logs_folder)
+        row_logs_path.addWidget(btn_open_log_file)
+        maintenance_layout.addLayout(row_logs_path)
+
+        # Vue logs (lecture seule)
+        self.logs_view = QPlainTextEdit()
+        self.logs_view.setReadOnly(True)
+        self.logs_view.setPlaceholderText("Les logs s’afficheront ici…")
+        self.logs_view.setObjectName("LogsViewer")
+        self.logs_view.setMinimumHeight(180)
+        maintenance_layout.addWidget(self.logs_view)
+
+        row_logs_actions = QHBoxLayout()
+
+        btn_refresh_logs = QPushButton("Rafraîchir")
+        btn_refresh_logs.setObjectName("SecondaryButton")
+        btn_refresh_logs.clicked.connect(self._on_refresh_logs_view)
+        row_logs_actions.addWidget(btn_refresh_logs)
+
+        btn_clear_logs = QPushButton("Vider le fichier")
+        btn_clear_logs.setObjectName("SecondaryButton")
+        btn_clear_logs.clicked.connect(self._on_clear_log_file)
+        row_logs_actions.addWidget(btn_clear_logs)
+
+        row_logs_actions.addStretch(1)
+        maintenance_layout.addLayout(row_logs_actions)
+
+        btn_delete_log = QPushButton("Supprimer le fichier de log")
+        btn_delete_log.setObjectName("DangerButton")
+        btn_delete_log.clicked.connect(self._on_delete_log_file)
+        maintenance_layout.addWidget(btn_delete_log)
+
         btn_reset_db = QPushButton("Réinitialiser la base de données")
         btn_reset_db.setObjectName("DangerButton")
         btn_reset_db.clicked.connect(self._on_reset_database_clicked)
@@ -354,12 +412,12 @@ class SettingsWidget(QWidget):
     # ---------------------------------------------------------
     # ACTIONS / LOGIQUE
     # ---------------------------------------------------------
-    def _browse_letters_dir(self):
+    def _browse_letters_dir(self) -> None:
         directory = QFileDialog.getExistingDirectory(self, "Choisir le dossier des lettres")
         if directory:
             self.input_letters_dir.setText(directory)
 
-    def _browse_templates_dir(self):
+    def _browse_templates_dir(self) -> None:
         directory = QFileDialog.getExistingDirectory(self, "Choisir le dossier des modèles")
         if directory:
             self.input_templates_dir.setText(directory)
@@ -370,7 +428,7 @@ class SettingsWidget(QWidget):
             return False
         return True
 
-    def load_settings(self):
+    def load_settings(self) -> None:
         if not self._require_session():
             return
         profil = ensure_profile(self.session)
@@ -402,8 +460,9 @@ class SettingsWidget(QWidget):
         self.spin_recent_count.setValue(10)
         if hasattr(self, "db_path_value"):
             self._refresh_db_path_ui()
+        self._refresh_logs_path_ui()
 
-    def save_settings(self):
+    def save_settings(self) -> None:
         if not self._require_session():
             return
 
@@ -429,10 +488,10 @@ class SettingsWidget(QWidget):
 
         self._show_status_message("Paramètres enregistrés.")
 
-    def reset_settings(self):
+    def reset_settings(self) -> None:
         self.load_settings()
 
-    def _show_status_message(self, message: str, duration_ms: int = 3000):
+    def _show_status_message(self, message: str, duration_ms: int = 3000) -> None:
         self.status_label.setText(message)
         self.status_label.setVisible(True)
         QTimer.singleShot(duration_ms, lambda: self.status_label.setVisible(False))
@@ -449,6 +508,151 @@ class SettingsWidget(QWidget):
         except Exception:
             self.db_path_value.setText("(chemin DB indisponible)")
             self.db_path_value.setToolTip("")
+
+    def _get_app_base_dir(self) -> Path:
+        """Retourne le dossier racine de données de l'app (même base que la DB)."""
+        db_path = get_db_path()
+        # Si la DB est dans .../<AppName>/data/<file>.sqlite, base = .../<AppName>
+        if db_path.parent.name.lower() == "data":
+            return db_path.parent.parent
+        return db_path.parent
+
+    def _get_logs_dir(self) -> Path:
+        """Dossier des logs (créé si nécessaire)."""
+        base_dir = self._get_app_base_dir()
+        logs_dir = base_dir / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        return logs_dir
+
+    def _get_log_file_path(self) -> Path:
+        """Chemin du fichier log principal."""
+        # Si une variable d'environnement est définie, elle prime
+        env_path = os.environ.get("CV_MANAGER_LOG_FILE", "").strip()
+        if env_path:
+            return Path(env_path).expanduser()
+        return self._get_logs_dir() / "cv_manager.log"
+
+    def _refresh_logs_path_ui(self) -> None:
+        """Met à jour l'affichage du chemin des logs."""
+        if not hasattr(self, "logs_path_value"):
+            return
+        try:
+            log_path = self._get_log_file_path()
+            self.logs_path_value.setText(str(log_path))
+            self.logs_path_value.setToolTip(str(log_path))
+        except Exception:
+            self.logs_path_value.setText("(chemin logs indisponible)")
+            self.logs_path_value.setToolTip("")
+
+    def _on_open_logs_folder(self) -> None:
+        """Ouvre le dossier des logs."""
+        try:
+            folder = self._get_log_file_path().parent
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+        except Exception as e:
+            QMessageBox.warning(self, "Ouverture du dossier", f"Impossible d'ouvrir le dossier :\n\n{e}")
+
+    def _on_open_log_file(self) -> None:
+        """Ouvre le fichier de log dans l'application par défaut (si existant)."""
+        try:
+            log_path = self._get_log_file_path()
+            if not log_path.exists():
+                QMessageBox.information(self, "Logs", "Aucun fichier de log trouvé pour le moment.")
+                return
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_path)))
+        except Exception as e:
+            QMessageBox.warning(self, "Logs", f"Impossible d'ouvrir le fichier :\n\n{e}")
+
+    def _on_delete_log_file(self) -> None:
+        """Supprime le fichier de log (action destructive)."""
+        try:
+            log_path = self._get_log_file_path()
+            if not log_path.exists():
+                self._show_status_message("Aucun fichier de log à supprimer.")
+                self._refresh_logs_path_ui()
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Supprimer le fichier de log",
+                "Cette action va supprimer le fichier de log actuel.\n\n"
+                "Voulez-vous continuer ?",
+                QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            log_path.unlink(missing_ok=True)
+            self._on_refresh_logs_view()
+            self._show_status_message("Fichier de log supprimé.", duration_ms=4000)
+            self._refresh_logs_path_ui()
+        except Exception as e:
+            QMessageBox.warning(self, "Logs", f"Suppression impossible :\n\n{e}")
+
+    def _on_refresh_logs_view(self) -> None:
+        """Recharge le contenu du fichier de log dans la vue."""
+        if not hasattr(self, "logs_view"):
+            return
+        try:
+            log_path = self._get_log_file_path()
+            if not log_path.exists():
+                self.logs_view.setPlainText("")
+                self.logs_view.setPlaceholderText("Aucun fichier de log pour le moment.")
+                return
+
+            # Lecture robuste (évite crash sur caractères bizarres)
+            text = log_path.read_text(encoding="utf-8", errors="replace")
+
+            # Garde uniquement les dernières lignes pour éviter de surcharger l'UI
+            max_chars = 200_000
+            if len(text) > max_chars:
+                text = text[-max_chars:]
+                # on coupe au prochain retour à la ligne pour éviter une ligne tronquée au début
+                nl = text.find("\n")
+                if nl != -1:
+                    text = text[nl + 1 :]
+
+            # Ne met à jour que si ça a changé (évite de perdre la sélection/scroll)
+            current = self.logs_view.toPlainText()
+            if current != text:
+                at_bottom = self.logs_view.verticalScrollBar().value() >= self.logs_view.verticalScrollBar().maximum() - 2
+                self.logs_view.setPlainText(text)
+                if at_bottom:
+                    sb = self.logs_view.verticalScrollBar()
+                    sb.setValue(sb.maximum())
+        except Exception as e:
+            # Ne pas spammer de popups; on affiche dans la zone et on garde l'app stable
+            try:
+                self.logs_view.setPlainText(f"Impossible de lire les logs: {e}")
+            except Exception:
+                pass
+
+    def _on_clear_log_file(self) -> None:
+        """Vide le fichier de log sans le supprimer (action destructive)."""
+        try:
+            log_path = self._get_log_file_path()
+            if not log_path.exists():
+                self._show_status_message("Aucun fichier de log à vider.")
+                self._on_refresh_logs_view()
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Vider le fichier de log",
+                "Cette action va vider le fichier de log actuel.\n\nVoulez-vous continuer ?",
+                QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            # Truncate
+            log_path.write_text("", encoding="utf-8")
+            self._show_status_message("Fichier de log vidé.", duration_ms=4000)
+            self._on_refresh_logs_view()
+        except Exception as e:
+            QMessageBox.warning(self, "Logs", f"Impossible de vider le fichier :\n\n{e}")
 
     def _on_open_db_folder(self) -> None:
         """Ouvre le dossier contenant la base de données dans l'explorateur."""
@@ -467,7 +671,7 @@ class SettingsWidget(QWidget):
         except Exception as e:
             QMessageBox.warning(self, "Révéler la DB", f"Impossible de révéler le fichier :\n\n{e}")
 
-    def _on_reset_database_clicked(self):
+    def _on_reset_database_clicked(self) -> None:
         """Action dangereuse : supprime le fichier sqlite et invite à relancer l'app."""
         if not self._require_session():
             return
@@ -526,6 +730,7 @@ class SettingsWidget(QWidget):
         )
         if hasattr(self, "db_path_value"):
             self._refresh_db_path_ui()
+        self._refresh_logs_path_ui()
         try:
             self.session = None
         except Exception:
@@ -536,7 +741,7 @@ class SettingsWidget(QWidget):
     # ---------------------------------------------------------
     # Templates (Jinja2)
     # ---------------------------------------------------------
-    def _refresh_templates(self):
+    def _refresh_templates(self) -> None:
         """Recharge la liste des templates utilisateur et met à jour le combo."""
         try:
             ensure_user_templates_dir()
@@ -561,7 +766,7 @@ class SettingsWidget(QWidget):
             self.combo_default_template.setCurrentIndex(0)
         self.combo_default_template.blockSignals(False)
 
-    def _show_tpl_message(self, message: str, *, kind: str = "info", duration_ms: int = 5000):
+    def _show_tpl_message(self, message: str, *, kind: str = "info", duration_ms: int = 5000) -> None:
         if not hasattr(self, "tpl_status"):
             self._show_status_message(message, duration_ms=duration_ms)
             return
@@ -572,11 +777,11 @@ class SettingsWidget(QWidget):
         self.tpl_status.setVisible(True)
         QTimer.singleShot(duration_ms, lambda: self.tpl_status.setVisible(False))
 
-    def _on_open_templates_dir(self):
+    def _on_open_templates_dir(self) -> None:
         d = ensure_user_templates_dir()
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(d)))
 
-    def _on_import_template(self):
+    def _on_import_template(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Importer un template",
@@ -610,7 +815,7 @@ class SettingsWidget(QWidget):
             return ""
         return name
 
-    def _on_delete_template(self):
+    def _on_delete_template(self) -> None:
         name = self._selected_template_name()
         if not name:
             self._show_tpl_message("Aucun template sélectionné.", kind="warning")
@@ -628,7 +833,7 @@ class SettingsWidget(QWidget):
         except Exception as e:
             self._show_tpl_message(f"Impossible de supprimer: {e}", kind="error")
 
-    def _on_set_default_template(self):
+    def _on_set_default_template(self) -> None:
         """Définit le template par défaut.
 
         Si le modèle ProfilCandidat a un champ compatible, on persiste.
