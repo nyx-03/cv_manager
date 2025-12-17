@@ -7,10 +7,8 @@ Objectifs :
 Ce module ne dépend PAS de Qt.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 from sqlalchemy.orm import Session
 
@@ -34,13 +32,13 @@ class OfferCreateData:
 class OfferUpdateData:
     """Données modifiables d'une Offre (None = ne pas changer)."""
 
-    titre_poste: Optional[str] = None
-    entreprise: Optional[str] = None
-    url: Optional[str] = None
-    source: Optional[str] = None
-    localisation: Optional[str] = None
-    type_contrat: Optional[str] = None
-    texte_annonce: Optional[str] = None
+    titre_poste: str | None = None
+    entreprise: str | None = None
+    url: str | None = None
+    source: str | None = None
+    localisation: str | None = None
+    type_contrat: str | None = None
+    texte_annonce: str | None = None
 
 
 # -----------------------------------------------------------------------------
@@ -54,7 +52,7 @@ def list_offers(session: Session, *, desc: bool = True) -> list[Offre]:
     return q.all()
 
 
-def get_offer(session: Session, offer_id: int) -> Optional[Offre]:
+def get_offer(session: Session, offer_id: int) -> Offre | None:
     """Retourne une offre par id, ou None."""
     return session.query(Offre).filter_by(id=offer_id).first()
 

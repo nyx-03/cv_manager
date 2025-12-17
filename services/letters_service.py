@@ -18,13 +18,12 @@ Format template supporté (simple) :
 Note: les templates `.j2` sont rendus via Jinja2 (conditions/boucles/expressions supportées).
 """
 
-from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping
 
 
 try:
@@ -92,7 +91,7 @@ DEFAULT_LETTER_TEMPLATE_NAME = "lettre_moderne.html.j2"
 def resolve_template_path(
     template: str | Path,
     *,
-    extra_dirs: Optional[list[str | Path]] = None,
+    extra_dirs: list[str | Path] | None = None,
 ) -> tuple[Path, list[Path]]:
     """Résout un template à partir d'un nom ou d'un chemin.
 
@@ -283,8 +282,8 @@ def generate_letter_html(
     offre: object,
     lettre: object | None = None,
     filename_hint: str = "lettre",
-    extra_context: Optional[Mapping[str, Any]] = None,
-    now: Optional[datetime] = None,
+    extra_context: Mapping[str, Any] | None = None,
+    now: datetime | None = None,
 ) -> LetterGenerationResult:
     """Génère une lettre HTML à partir d'un template.
 
@@ -397,7 +396,7 @@ def resolve_template_for_generation(
     profil: object,
     template_path: str | Path | None = None,
     template_name: str | None = None,
-    extra_dirs: Optional[list[str | Path]] = None,
+    extra_dirs: list[str | Path] | None = None,
 ) -> Path:
     """Résout le template à utiliser pour la génération.
 
@@ -431,7 +430,7 @@ def resolve_template_for_generation(
     return get_default_letter_template_path()
 
 
-def build_letter_context(*, profil: object, offre: object, now: Optional[datetime] = None) -> dict[str, Any]:
+def build_letter_context(*, profil: object, offre: object, now: datetime | None = None) -> dict[str, Any]:
     """Construit un contexte standard (profil + offre).
 
     Cette fonction est volontairement tolérante: si un attribut n'existe pas, on renvoie "".

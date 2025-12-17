@@ -1,5 +1,7 @@
+
 from pathlib import Path
 import os
+from typing import Any
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -44,7 +46,7 @@ class SettingsWidget(QWidget):
     La persistance (JSON, base, etc.) pourra être branchée plus tard.
     """
 
-    def __init__(self, session=None, parent: QWidget | None = None):
+    def __init__(self, session: Any | None = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.session = session
         self._templates: list[str] = []
@@ -61,12 +63,12 @@ class SettingsWidget(QWidget):
         self._logs_auto_refresh = True
         self._on_refresh_logs_view()
 
-    def showEvent(self, event):
+    def showEvent(self, event: QEvent) -> None:
         super().showEvent(event)
         if hasattr(self, "_logs_timer") and getattr(self, "_logs_auto_refresh", False):
             self._logs_timer.start()
 
-    def hideEvent(self, event):
+    def hideEvent(self, event: QEvent) -> None:
         super().hideEvent(event)
         if hasattr(self, "_logs_timer"):
             self._logs_timer.stop()
@@ -74,7 +76,7 @@ class SettingsWidget(QWidget):
     # ---------------------------------------------------------
     # UI SETUP
     # ---------------------------------------------------------
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(12, 12, 12, 12)
         main_layout.setSpacing(12)
@@ -550,9 +552,6 @@ class SettingsWidget(QWidget):
         self.status_label.setText(message)
         self.status_label.setVisible(True)
         QTimer.singleShot(duration_ms, lambda: self.status_label.setVisible(False))
-
-
-
 
     def _refresh_db_path_ui(self) -> None:
         """Met à jour l'affichage du chemin de la DB dans la carte Maintenance."""

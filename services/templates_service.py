@@ -1,22 +1,24 @@
-from pathlib import Path
+
 from datetime import date
+from pathlib import Path
+from typing import Final
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from models import ProfilCandidat, Offre
+from models import Offre, ProfilCandidat
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-TEMPLATES_DIR = BASE_DIR / "templates"
-GENERATED_DIR = BASE_DIR / "generated" / "lettres_html"
+BASE_DIR: Final[Path] = Path(__file__).resolve().parent.parent
+TEMPLATES_DIR: Final[Path] = BASE_DIR / "templates"
+GENERATED_DIR: Final[Path] = BASE_DIR / "generated" / "lettres_html"
 
-env = Environment(
+env: Final[Environment] = Environment(
     loader=FileSystemLoader(TEMPLATES_DIR),
     autoescape=select_autoescape(enabled_extensions=("html",)),
     trim_blocks=True,
     lstrip_blocks=True,
 )
 
-def ensure_generated_dirs():
+def ensure_generated_dirs() -> None:
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -74,7 +76,7 @@ def render_lettre_candidature_html(
         "Je reste à votre disposition pour un entretien."
     )
 
-    ctx = {
+    ctx: dict[str, object] = {
         "profil": profil,
         "offre": offre,
         "date_du_jour": date.today().strftime("%d/%m/%Y"),

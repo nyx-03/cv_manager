@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QFrame,
 )
-from PySide6.QtCore import Qt, QUrl, QSize
+from PySide6.QtCore import Qt, QUrl, QSize, QPoint
 from PySide6.QtGui import QDesktopServices, QColor
 
 from pathlib import Path
@@ -29,7 +29,7 @@ class CandidaturesWindow(QDialog):
     avec recherche, filtre par statut et actions de base.
     """
 
-    def __init__(self, session, parent=None):
+    def __init__(self, session: object, parent: QDialog | None = None):
         super().__init__(parent)
         self.session = session
         self.setWindowTitle("Toutes les candidatures")
@@ -41,7 +41,7 @@ class CandidaturesWindow(QDialog):
     # ---------------------------------------------------------
     # UI SETUP
     # ---------------------------------------------------------
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
 
         # --- Card principale : titre + tableau + boutons ---
@@ -124,8 +124,9 @@ class CandidaturesWindow(QDialog):
     # ---------------------------------------------------------
     # DATA LOADING
     # ---------------------------------------------------------
-    def load_candidatures(self):
+    def load_candidatures(self) -> None:
         """Charge toutes les candidatures en base."""
+        self.all_rows: list[Candidature]
         self.all_rows = (
             self.session.query(Candidature)
             .join(Offre)
@@ -134,7 +135,7 @@ class CandidaturesWindow(QDialog):
         )
         self.apply_filters()
 
-    def apply_filters(self):
+    def apply_filters(self) -> None:
         search_text = self.input_search.text().lower().strip()
         statut_filter = self.combo_statut.currentText()
 
@@ -155,7 +156,7 @@ class CandidaturesWindow(QDialog):
 
         self.display_rows(filtered)
 
-    def display_rows(self, rows):
+    def display_rows(self, rows: list[Candidature]) -> None:
         self.table.setRowCount(len(rows))
 
         for row_idx, cand in enumerate(rows):
@@ -198,7 +199,7 @@ class CandidaturesWindow(QDialog):
     # ---------------------------------------------------------
     # ACTIONS
     # ---------------------------------------------------------
-    def get_selected_candidature(self):
+    def get_selected_candidature(self) -> Candidature | None:
         row = self.table.currentRow()
         if row < 0:
             return None
@@ -213,7 +214,7 @@ class CandidaturesWindow(QDialog):
             .first()
         )
 
-    def open_letter(self):
+    def open_letter(self) -> None:
         cand = self.get_selected_candidature()
         if not cand:
             return
@@ -229,7 +230,7 @@ class CandidaturesWindow(QDialog):
 
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
 
-    def delete_selected(self):
+    def delete_selected(self) -> None:
         cand = self.get_selected_candidature()
         if not cand:
             QMessageBox.warning(self, "Aucune sélection", "Aucune candidature sélectionnée.")
@@ -247,7 +248,7 @@ class CandidaturesWindow(QDialog):
             self.session.commit()
             self.load_candidatures()
 
-    def mark_selected_sent(self):
+    def mark_selected_sent(self) -> None:
         cand = self.get_selected_candidature()
         if not cand:
             QMessageBox.warning(self, "Aucune sélection", "Aucune candidature sélectionnée.")
@@ -262,7 +263,7 @@ class CandidaturesWindow(QDialog):
         self.session.commit()
         self.load_candidatures()
 
-    def show_context_menu(self, pos):
+    def show_context_menu(self, pos: QPoint) -> None:
         index = self.table.indexAt(pos)
         if not index.isValid():
             return

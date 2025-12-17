@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Optional, Callable
+from collections.abc import Callable
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QStackedWidget
@@ -62,6 +60,7 @@ class ApplicationView(QWidget):
 
     # Navigation/data
     offerClicked = Signal(object)
+    editOfferRequested = Signal(object)
 
     # Offer detail actions
     backToOffersRequested = Signal()
@@ -70,11 +69,11 @@ class ApplicationView(QWidget):
     deleteRequested = Signal(int)
     deleteOfferRequested = Signal(int)
 
-    def __init__(self, session, parent=None):
+    def __init__(self, session, parent: QWidget | None = None):
         super().__init__(parent)
         self.session = session
 
-        self.current_offer: Optional[Offre] = None
+        self.current_offer: Offre | None = None
 
         # 1) Widgets
         self.sidebar = Sidebar(self)
@@ -163,11 +162,11 @@ class ApplicationView(QWidget):
             self.stats.refresh()
 
     def show_add_offer(self) -> None:
-        self.offer_form_page.reset_form()
+        self.offer_form_page.open_for_create()
         self.set_page(PAGE_ADD_OFFER)
 
     def show_edit_offer(self, offre: Offre) -> None:
-        self.offer_form_page.load_offer(offre)
+        self.offer_form_page.open_for_edit(offre.id)
         self.set_page(PAGE_ADD_OFFER)
 
     def show_offers(self) -> None:
@@ -184,6 +183,8 @@ class ApplicationView(QWidget):
     def _create_connections(self) -> None:
         # Offers
         self.offers_page.offerClicked.connect(self.offerClicked.emit)
+        if hasattr(self.offers_page, "offerEditRequested"):
+            self.offers_page.offerEditRequested.connect(self.show_edit_offer)
 
         # Detail page
         self.offer_detail_page.backRequested.connect(self.show_offers)

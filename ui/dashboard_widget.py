@@ -1,5 +1,3 @@
-
-
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -22,7 +20,7 @@ class DashboardWidget(QWidget):
     Affiche des statistiques globales ainsi que les dernières candidatures.
     """
 
-    def __init__(self, session, parent=None):
+    def __init__(self, session: object, parent: QWidget | None = None):
         super().__init__(parent)
         self.session = session
 
@@ -32,7 +30,7 @@ class DashboardWidget(QWidget):
     # ---------------------------------------------------------
     # UI SETUP
     # ---------------------------------------------------------
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(12, 12, 12, 12)
         root_layout.setSpacing(12)
@@ -134,12 +132,12 @@ class DashboardWidget(QWidget):
     # ---------------------------------------------------------
     # DATA REFRESH
     # ---------------------------------------------------------
-    def refresh(self):
+    def refresh(self) -> None:
         """Recharge les statistiques et la liste des dernières candidatures."""
         self._refresh_stats()
         self._refresh_recent_candidatures()
 
-    def _refresh_stats(self):
+    def _refresh_stats(self) -> None:
         # Total offres
         total_offres = self.session.query(Offre).count()
         self.label_total_offres.setText(f"Offres : {total_offres}")
@@ -149,7 +147,7 @@ class DashboardWidget(QWidget):
         self.label_total_candidatures.setText(f"Candidatures : {total_cand}")
 
         # Par statut
-        def count_by_statut(statut):
+        def count_by_statut(statut: CandidatureStatut) -> int:
             return (
                 self.session.query(Candidature)
                 .filter(Candidature.statut == statut)
@@ -166,7 +164,8 @@ class DashboardWidget(QWidget):
         self.label_relance.setText(f"Relances : {relance}")
         self.label_entretiens.setText(f"Entretiens : {entretiens}")
 
-    def _refresh_recent_candidatures(self, limit: int = 10):
+    def _refresh_recent_candidatures(self, limit: int = 10) -> None:
+        rows: list[Candidature]
         # Récupère les dernières candidatures avec jointure sur l'offre
         rows = (
             self.session.query(Candidature)

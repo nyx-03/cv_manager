@@ -1,8 +1,6 @@
-from __future__ import annotations
+from collections.abc import Callable, Iterable
 
-from typing import Callable, Iterable, Optional, Any
-
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt, QPoint
 from PySide6.QtWidgets import (
     QWidget,
     QLabel,
@@ -10,6 +8,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QVBoxLayout,
     QSizePolicy,
+    QMenu,
 )
 
 from ui.widgets.offer_card import OfferCard
@@ -27,14 +26,15 @@ class OffersPage(QWidget):
     """
 
     offerClicked = Signal(object)
+    offerEditRequested = Signal(object)
 
     def __init__(
         self,
-        parent=None,
+        parent: QWidget | None = None,
         title: str = "Annonces",
         columns: int = 3,
-        status_resolver: Optional[Callable[[object], str]] = None,
-        candidature_stats_resolver: Optional[Callable[[object], OfferCandidatureStats]] = None,
+        status_resolver: Callable[[object], str] | None = None,
+        candidature_stats_resolver: Callable[[object], OfferCandidatureStats] | None = None,
     ):
         super().__init__(parent)
         self._columns = max(1, int(columns))
@@ -71,13 +71,13 @@ class OffersPage(QWidget):
         self._columns = max(1, int(columns))
         self._render()
 
-    def set_status_resolver(self, resolver: Optional[Callable[[object], str]]) -> None:
+    def set_status_resolver(self, resolver: Callable[[object], str] | None) -> None:
         """Permet à la MainWindow (ou un service) de définir comment calculer le statut d'une offre."""
         self._status_resolver = resolver
         self._render()
 
     def set_candidature_stats_resolver(
-        self, resolver: Optional[Callable[[object], OfferCandidatureStats]]
+        self, resolver: Callable[[object], OfferCandidatureStats] | None
     ) -> None:
         """Permet d'injecter une fonction qui retourne les stats de candidatures pour une offre."""
         self._candidature_stats_resolver = resolver
@@ -103,6 +103,33 @@ class OffersPage(QWidget):
 
     def _on_card_clicked(self, offer: object) -> None:
         self.offerClicked.emit(offer)
+
+    def _on_edit_requested(self, offer: object) -> None:
+        self.offerEditRequested.emit(offer)
+
+    def _install_card_context_menu(self, card: OfferCard, offer: object) -> None:
+        """Ajoute un menu contextuel (clic droit) sur la carte.
+
+        - Ouvrir : équivalent au clic principal
+        - Modifier : déclenche l'édition complète de l'annonce
+        """
+        card.setContextMenuPolicy(Qt.CustomContextMenu)
+
+        def _on_menu(pos: QPoint) -> None:
+            menu = QMenu(card)
+            act_open = menu.addAction("Ouvrir")
+            act_edit = menu.addAction("Modifier")
+            chosen = menu.exec(card.mapToGlobal(pos))
+            if chosen == act_open:
+                self._on_card_clicked(offer)
+            elif chosen == act_edit:
+                self._on_edit_requested(offer)
+
+        try:
+            card.customContextMenuRequested.connect(_on_menu)
+        except Exception:
+            # Si le widget ne supporte pas (rare), on ignore.
+            pass
 
     def _apply_status(self, card: OfferCard, offer: object) -> None:
         status = "A_PREPARER"
@@ -153,6 +180,8 @@ class OffersPage(QWidget):
             col = i % cols
 
             card = OfferCard(offer, self._on_card_clicked, self)
+            card.editRequested.connect(lambda o=offer: self._on_edit_requested(o))
+            self._install_card_context_menu(card, offer)
             self._apply_status(card, offer)
             self._apply_candidature_stats(card, offer)
             self.grid.addWidget(card, row, col)

@@ -1,12 +1,11 @@
-from __future__ import annotations
+from collections.abc import Callable, Mapping
 
-from typing import Callable, Optional, Mapping, Any
-
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QHBoxLayout, QSizePolicy
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QHBoxLayout, QSizePolicy, QPushButton
 
 
 class OfferCard(QFrame):
+    editRequested = Signal(object)
     """Carte cliquable représentant une offre.
 
     ObjectName: OfferCard
@@ -36,6 +35,10 @@ class OfferCard(QFrame):
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(3)
 
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(8)
+
         title_text = (
             getattr(offer, "titre_poste", None)
             or getattr(offer, "titre", None)
@@ -46,6 +49,18 @@ class OfferCard(QFrame):
         self.lbl_title = QLabel(str(title_text))
         self.lbl_title.setObjectName("OfferCardTitle")
         self.lbl_title.setWordWrap(True)
+
+        self.btn_edit = QPushButton("✏️")
+        self.btn_edit.setObjectName("OfferCardEditButton")
+        self.btn_edit.setCursor(Qt.PointingHandCursor)
+        self.btn_edit.setToolTip("Modifier l'annonce")
+        self.btn_edit.setFlat(True)
+        self.btn_edit.setFocusPolicy(Qt.NoFocus)
+        self.btn_edit.setFixedSize(28, 28)
+        self.btn_edit.clicked.connect(lambda: self.editRequested.emit(self.offer))
+
+        header.addWidget(self.lbl_title, 1)
+        header.addWidget(self.btn_edit, 0, Qt.AlignTop)
 
         self.lbl_company = QLabel(str(company_text))
         self.lbl_company.setObjectName("OfferCardSubtitle")
@@ -61,7 +76,7 @@ class OfferCard(QFrame):
         meta_parts = [p for p in (str(loc).strip(), str(source).strip()) if p]
         meta_text = " • ".join(meta_parts)
 
-        self.lbl_meta: Optional[QLabel] = None
+        self.lbl_meta: QLabel | None = None
         if meta_text:
             self.lbl_meta = QLabel(meta_text)
             self.lbl_meta.setObjectName("OfferCardMeta")
@@ -74,10 +89,10 @@ class OfferCard(QFrame):
         self.badges_row.setSpacing(6)
         self.badges_row.setContentsMargins(0, 4, 0, 0)
 
-        self.lbl_badge_total: Optional[QLabel] = None
+        self.lbl_badge_total: QLabel | None = None
         self._status_badges: dict[str, QLabel] = {}
 
-        layout.addWidget(self.lbl_title)
+        layout.addLayout(header)
         layout.addWidget(self.lbl_company)
         if self.lbl_meta is not None:
             layout.addWidget(self.lbl_meta)
@@ -146,6 +161,17 @@ class OfferCard(QFrame):
         self._badges_container.style().polish(self._badges_container)
 
     def mousePressEvent(self, event):
+        # Si on clique sur le bouton d'édition, ne pas ouvrir la carte.
+        try:
+            pos = event.position().toPoint()  # Qt6
+        except Exception:
+            pos = event.pos()  # fallback
+
+        w = self.childAt(pos)
+        if w is not None and w.objectName() == "OfferCardEditButton":
+            event.accept()
+            return
+
         if callable(self._on_open):
             self._on_open(self.offer)
         super().mousePressEvent(event)

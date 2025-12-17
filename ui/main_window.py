@@ -1,6 +1,5 @@
 # ui/main_window.py
 
-from __future__ import annotations
 
 from pathlib import Path
 
@@ -9,6 +8,7 @@ from PySide6.QtGui import QDesktopServices, QAction
 from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
+    QWidget,
 )
 
 from db import SessionLocal
@@ -40,7 +40,7 @@ from models import Offre, Candidature, CandidatureStatut, LettreMotivation, Lett
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
 
         self.setWindowTitle("CV Manager - Candidatures")
@@ -53,7 +53,7 @@ class MainWindow(QMainWindow):
         self._setup_actions()
         self._load_offers()
 
-    def _setup_actions(self):
+    def _setup_actions(self) -> None:
         # Menu "Offre" (simple, fonctionne même si la sidebar évolue)
         offer_menu = self.menuBar().addMenu("Offre")
 
@@ -62,7 +62,7 @@ class MainWindow(QMainWindow):
         self.action_delete_offer.triggered.connect(self.on_delete_offer)
         offer_menu.addAction(self.action_delete_offer)
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         self.view = ApplicationView(self.session, parent=self)
         self.setCentralWidget(self.view)
         self._wire_offer_detail_editor()
@@ -109,7 +109,7 @@ class MainWindow(QMainWindow):
                 return None
         return None
 
-    def _wire_offer_detail_editor(self):
+    def _wire_offer_detail_editor(self) -> None:
         """Connecte les signaux de l'éditeur de lettre (OfferDetailPage) au contrôleur."""
         if getattr(self, "_offer_detail_editor_wired", False):
             return
@@ -127,7 +127,7 @@ class MainWindow(QMainWindow):
 
         self._offer_detail_editor_wired = True
 
-    def _refresh_current_page(self):
+    def _refresh_current_page(self) -> None:
         self._wire_offer_detail_editor()
         idx = self.view.current_page() if hasattr(self, "view") else -1
         if idx == PAGE_DASHBOARD:
@@ -152,7 +152,7 @@ class MainWindow(QMainWindow):
         )
         return last.statut.name if last and last.statut else "A_PREPARER"
 
-    def open_offer_detail(self, offre: Offre):
+    def open_offer_detail(self, offre: Offre) -> None:
         from ui.pages.offer_detail_page import LetterViewModel
 
         self.current_offer = offre
@@ -187,7 +187,7 @@ class MainWindow(QMainWindow):
         self.view.set_offer_detail_letters(vms)
         self.view.set_page(PAGE_OFFER_DETAIL)
 
-    def on_open_letter_by_id(self, cand_id: int):
+    def on_open_letter_by_id(self, cand_id: int) -> None:
         cand = get_candidature(self.session, cand_id)
         if not cand:
             QMessageBox.warning(self, "Ouvrir la lettre", "Candidature introuvable.")
@@ -205,7 +205,7 @@ class MainWindow(QMainWindow):
 
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
-    def on_mark_sent_by_id(self, cand_id: int):
+    def on_mark_sent_by_id(self, cand_id: int) -> None:
         try:
             mark_sent(self.session, cand_id)
         except ValueError:
@@ -215,7 +215,7 @@ class MainWindow(QMainWindow):
         if self.current_offer:
             self.open_offer_detail(self.current_offer)
 
-    def on_delete_candidature_by_id(self, cand_id: int):
+    def on_delete_candidature_by_id(self, cand_id: int) -> None:
         cand = get_candidature(self.session, cand_id)
         if not cand:
             QMessageBox.warning(self, "Suppression", "Candidature introuvable.")
@@ -248,7 +248,7 @@ class MainWindow(QMainWindow):
         if self.current_offer:
             self.open_offer_detail(self.current_offer)
 
-    def on_delete_offer_by_id(self, offer_id: int):
+    def on_delete_offer_by_id(self, offer_id: int) -> None:
         # Sélectionner l'offre courante à partir de l'ID
         offre = self.session.query(Offre).filter_by(id=offer_id).first()
         if not offre:
@@ -259,12 +259,10 @@ class MainWindow(QMainWindow):
         self.current_offer = offre
         self.on_delete_offer()
 
-    def _load_offers(self):
+    def _load_offers(self) -> None:
         offers = list_offers(self.session, desc=True)
         self.view.set_offers(offers)
-
-
-    def on_new_offer(self):
+    def on_new_offer(self) -> None:
         """Open the add-offer page inside the stacked layout."""
         try:
             self.view.show_add_offer()
@@ -327,7 +325,7 @@ class MainWindow(QMainWindow):
         self.session.commit()
         return lettre
 
-    def on_prepare_letter(self, template_name: str = ""):
+    def on_prepare_letter(self, template_name: str = "") -> None:
         offre = self._get_selected_offer()
         if not offre:
             QMessageBox.warning(self, "Préparation lettre", "Sélectionne d'abord une offre dans la liste.")
@@ -427,7 +425,7 @@ class MainWindow(QMainWindow):
             self.open_offer_detail(self.current_offer)
 
 
-    def on_show_candidatures(self):
+    def on_show_candidatures(self) -> None:
         try:
             from ui.candidatures_window import CandidaturesWindow
         except ImportError as e:
@@ -441,7 +439,7 @@ class MainWindow(QMainWindow):
         dialog = CandidaturesWindow(self.session, parent=self)
         dialog.exec()
 
-    def on_delete_offer(self):
+    def on_delete_offer(self) -> None:
         offre = self._get_selected_offer()
         if not offre:
             QMessageBox.warning(self, "Suppression", "Aucune annonce sélectionnée.")
@@ -500,7 +498,7 @@ class MainWindow(QMainWindow):
             pass
         self._load_offers()
         QMessageBox.information(self, "Suppression", "Annonce supprimée.")
-    def _normalize_letter_payload(self, payload: dict) -> dict:
+    def _normalize_letter_payload(self, payload: dict[str, str]) -> dict[str, str]:
         """Normalise un payload d'éditeur vers les champs du modèle LettreMotivation.
 
         L'UI peut envoyer soit des clés courtes (intro/exp1/...), soit les champs
@@ -518,13 +516,12 @@ class MainWindow(QMainWindow):
             "conclusion": "paragraphe_conclusion",
         }
 
-        out: dict = {}
+        out: dict[str, str] = {}
         for k, v in payload.items():
             key = mapping.get(k, k)
             out[key] = v
         return out
-
-    def on_save_letter_draft(self, payload: dict):
+    def on_save_letter_draft(self, payload: dict[str, str]) -> None:
         """Sauvegarde le brouillon de lettre (contenu édité) dans LettreMotivation."""
         offre = self._get_selected_offer()
         if not offre:
@@ -561,7 +558,7 @@ class MainWindow(QMainWindow):
             self.session.rollback()
             QMessageBox.critical(self, "Erreur", f"Impossible d'enregistrer le brouillon : {e}")
 
-    def on_generate_letter_from_editor(self):
+    def on_generate_letter_from_editor(self) -> None:
         """Génère la lettre depuis l'éditeur: sauvegarde puis appelle la génération."""
         page = self._get_offer_detail_page_widget()
         payload = None
@@ -587,7 +584,7 @@ class MainWindow(QMainWindow):
         self.on_prepare_letter()
 
 
-    def on_generate_letter_from_editor_with_template(self, template_name: str):
+    def on_generate_letter_from_editor_with_template(self, template_name: str) -> None:
         """Génère la lettre depuis l'éditeur en forçant un template (data/templates)."""
         page = self._get_offer_detail_page_widget()
         payload = None

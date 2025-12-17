@@ -1,11 +1,10 @@
 
 
-from __future__ import annotations
 
 from dataclasses import dataclass
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QFrame, QVBoxLayout, QPushButton
+from PySide6.QtWidgets import QFrame, QVBoxLayout, QPushButton, QWidget
 
 
 @dataclass(frozen=True)
@@ -43,7 +42,7 @@ class Sidebar(QFrame):
     navigateRequested = Signal(str)
     actionRequested = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("Sidebar")
 

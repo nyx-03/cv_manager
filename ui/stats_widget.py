@@ -3,6 +3,8 @@
 from collections import Counter
 from datetime import datetime
 
+from typing import Any
+
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -30,7 +32,7 @@ class StatsWidget(QWidget):
     - répartition des candidatures par mois (sur la base de date_envoi)
     """
 
-    def __init__(self, session, parent=None):
+    def __init__(self, session: Any, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.session = session
 
@@ -40,7 +42,7 @@ class StatsWidget(QWidget):
     # ---------------------------------------------------------
     # UI SETUP
     # ---------------------------------------------------------
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(12, 12, 12, 12)
         root_layout.setSpacing(12)
@@ -165,14 +167,14 @@ class StatsWidget(QWidget):
     # ---------------------------------------------------------
     # DATA REFRESH
     # ---------------------------------------------------------
-    def refresh(self):
+    def refresh(self) -> None:
         """Recharge les statistiques complètes."""
         self._refresh_summary()
         self._refresh_by_status()
         self._refresh_by_company()
         self._refresh_by_month()
 
-    def _refresh_summary(self):
+    def _refresh_summary(self) -> None:
         total_cand = self.session.query(Candidature).count()
         total_offres = self.session.query(Offre).count()
 
@@ -190,7 +192,7 @@ class StatsWidget(QWidget):
         self.label_total_offres.setText(f"Total offres : {total_offres}")
         self.label_dernier_mois.setText(f"Candidatures envoyées ce mois-ci : {cand_this_month}")
 
-    def _refresh_by_status(self):
+    def _refresh_by_status(self) -> None:
         # Compte les candidatures par statut
         counts = {}
         for statut in CandidatureStatut:
@@ -211,7 +213,7 @@ class StatsWidget(QWidget):
             self.table_by_status.setItem(row_idx, 0, statut_item)
             self.table_by_status.setItem(row_idx, 1, nb_item)
 
-    def _refresh_by_company(self, limit: int = 10):
+    def _refresh_by_company(self, limit: int = 10) -> None:
         # Récupère toutes les candidatures avec leur entreprise et compte par entreprise
         rows = (
             self.session.query(Candidature)
@@ -235,7 +237,7 @@ class StatsWidget(QWidget):
             self.table_by_company.setItem(row_idx, 0, entreprise_item)
             self.table_by_company.setItem(row_idx, 1, nb_item)
 
-    def _refresh_by_month(self):
+    def _refresh_by_month(self) -> None:
         # Récupère toutes les candidatures avec une date d'envoi
         rows = (
             self.session.query(Candidature)
@@ -252,7 +254,7 @@ class StatsWidget(QWidget):
             counter[key] += 1
 
         # Tri par année/mois chronologique
-        def parse_key(k: str):
+        def parse_key(k: str) -> tuple[int, int]:
             month_str, year_str = k.split("/")
             return int(year_str), int(month_str)
 

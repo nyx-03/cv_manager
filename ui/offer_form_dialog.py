@@ -1,7 +1,7 @@
 # ui/offer_form_dialog.py
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLineEdit, QTextEdit,
-    QPushButton, QHBoxLayout, QFrame, QLabel
+    QPushButton, QHBoxLayout, QFrame, QLabel, QWidget
 )
 from PySide6.QtCore import Signal
 
@@ -17,7 +17,7 @@ class OfferFormDialog(QDialog):
     importRequested = Signal(str)
     importRequestedBrowser = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
 
         self.setWindowTitle("Nouvelle offre")
@@ -103,7 +103,7 @@ class OfferFormDialog(QDialog):
         layout.addWidget(form_card)
         layout.addLayout(btn_layout)
 
-    def get_data(self):
+    def get_data(self) -> dict[str, str]:
         """Retourne un dict avec toutes les infos saisies."""
         return {
             "titre_poste": self.titre_input.text(),
@@ -115,7 +115,7 @@ class OfferFormDialog(QDialog):
             "texte_annonce": self.texte_annonce_input.toPlainText(),
         }
 
-    def _on_import_clicked(self):
+    def _on_import_clicked(self) -> None:
         url = self.url_input.text().strip()
         if not url:
             self._set_import_status("Veuillez d'abord coller une URL.", kind="warning")
@@ -123,7 +123,7 @@ class OfferFormDialog(QDialog):
         self._set_import_status("Import en cours…", kind="info")
         self.importRequested.emit(url)
 
-    def _on_import_clicked_browser(self):
+    def _on_import_clicked_browser(self) -> None:
         if not HAS_QTWEBENGINE:
             self._set_import_status(
                 "QtWebEngine n'est pas installé (pip install PySide6-QtWebEngine).",
@@ -139,7 +139,7 @@ class OfferFormDialog(QDialog):
         self._set_import_status("Import navigateur en cours…", kind="info")
         self.importRequestedBrowser.emit(url)
 
-    def set_prefill_data(self, data: dict):
+    def set_prefill_data(self, data: dict[str, str]) -> None:
         """Pré-remplit le formulaire avec des données issues d'un import.
 
         Clés attendues (optionnelles):
@@ -169,10 +169,10 @@ class OfferFormDialog(QDialog):
 
         self._set_import_status("Formulaire pré-rempli. Vérifie et complète si nécessaire.", kind="success")
 
-    def set_import_error(self, message: str):
+    def set_import_error(self, message: str) -> None:
         self._set_import_status(message or "Erreur lors de l'import.", kind="error")
 
-    def _set_import_status(self, message: str, *, kind: str = "info"):
+    def _set_import_status(self, message: str, *, kind: str = "info") -> None:
         # kind: info | success | warning | error
         self.import_status.setText(message)
         self.import_status.setProperty("kind", kind)

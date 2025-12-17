@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """OfferListWidget
 
 Ce widget sert de couche d'abstraction pour la liste d'offres.
@@ -18,7 +16,7 @@ QSS:
 - Tout le style est porté par `OffersPage` / `OfferCard` (via objectName + propriétés).
 """
 
-from typing import Callable, Iterable, Optional
+from collections.abc import Callable, Iterable
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget, QVBoxLayout
@@ -43,10 +41,10 @@ class OfferListWidget(QWidget):
 
     def __init__(
         self,
-        parent=None,
+        parent: QWidget | None = None,
         title: str = "Annonces",
         columns: int = 3,
-        status_resolver: Optional[Callable[[object], str]] = None,
+        status_resolver: Callable[[object], str] | None = None,
     ):
         super().__init__(parent)
 
@@ -70,12 +68,12 @@ class OfferListWidget(QWidget):
     def set_offers(self, offers: Iterable[object]) -> None:
         self._page.set_offers(offers)
 
-    def set_status_resolver(self, resolver: Optional[Callable[[object], str]]) -> None:
+    def set_status_resolver(self, resolver: Callable[[object], str] | None) -> None:
         self._page.set_status_resolver(resolver)
 
     def set_candidature_stats_resolver(
         self,
-        resolver: Optional[Callable[[object], OfferCandidatureStats]],
+        resolver: Callable[[object], OfferCandidatureStats] | None,
     ) -> None:
         """Injecte un resolver de statistiques de candidatures vers OffersPage."""
         if hasattr(self._page, "set_candidature_stats_resolver"):

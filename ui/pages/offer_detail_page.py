@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 from PySide6.QtCore import Qt, Signal, QSignalBlocker, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -47,7 +45,7 @@ class LetterCard(QFrame):
     markSentRequested = Signal(int)
     deleteRequested = Signal(int)
 
-    def __init__(self, vm: LetterViewModel, parent=None):
+    def __init__(self, vm: LetterViewModel, parent: QWidget | None = None):
         super().__init__(parent)
         self.vm = vm
 
@@ -133,11 +131,11 @@ class OfferDetailPage(QWidget):
     # Nouveau (non-breaking): contient le nom du template sélectionné (ou "" pour défaut profil/app)
     generateLetterRequestedWithTemplate = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("OfferDetailPage")
 
-        self.current_offer: Optional[object] = None
+        self.current_offer: object | None = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -412,7 +410,7 @@ class OfferDetailPage(QWidget):
 
         self.letters_layout.addStretch(1)
 
-    def _on_delete_offer_clicked(self):
+    def _on_delete_offer_clicked(self) -> None:
         # UI only: on délègue la suppression réelle au contrôleur (MainWindow)
         offer_id = getattr(self.current_offer, "id", None)
         if offer_id is None:
@@ -431,7 +429,7 @@ class OfferDetailPage(QWidget):
         self.lbl_draft_status.style().unpolish(self.lbl_draft_status)
         self.lbl_draft_status.style().polish(self.lbl_draft_status)
 
-    def _mark_draft_dirty(self):
+    def _mark_draft_dirty(self) -> None:
         self._set_draft_status("Brouillon (modifié)", dirty=True)
 
     def _clear_layout(self, layout: QVBoxLayout) -> None:
@@ -471,7 +469,7 @@ class OfferDetailPage(QWidget):
             _ = item
 
 
-    def _emit_save_draft(self):
+    def _emit_save_draft(self) -> None:
         payload = {
             "paragraphe_intro": self.ed_intro.toPlainText().strip(),
             "paragraphe_exp1": self.ed_exp1.toPlainText().strip(),
@@ -488,7 +486,7 @@ class OfferDetailPage(QWidget):
     # Templates
     # ---------------------------
 
-    def refresh_templates(self):
+    def refresh_templates(self) -> None:
         """Recharge les templates utilisateur (data/templates) dans le combo."""
         if not hasattr(self, "combo_template"):
             return
@@ -524,14 +522,14 @@ class OfferDetailPage(QWidget):
             return ""
         return name
 
-    def _open_templates_dir(self):
+    def _open_templates_dir(self) -> None:
         try:
             d = ensure_user_templates_dir()
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(d)))
         except Exception:
             return
 
-    def _on_generate_clicked(self):
+    def _on_generate_clicked(self) -> None:
         """Émet la demande de génération en incluant le template choisi."""
         tpl = self._selected_template_name()
         # Non-breaking: on garde l'ancien signal (listeners existants)

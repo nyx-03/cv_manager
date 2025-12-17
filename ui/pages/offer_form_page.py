@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from typing import Any, Dict, Optional
+from typing import Any
 
 from PySide6.QtCore import Qt, Signal, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -41,11 +39,12 @@ class OfferFormPage(QWidget):
     saved = Signal(object)  # Offre
     cancelled = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.current_offer: Optional[Offre] = None
-        self._busy_restore_prefill: Optional[bool] = None
-        self._busy_restore_browser: Optional[bool] = None
+        self.current_offer: Offre | None = None
+        self._busy_restore_prefill: bool | None = None
+        self._busy_restore_browser: bool | None = None
+        self._snapshot: dict[str, str] = {}
 
         self._create_widgets()
         self._create_layouts()
@@ -69,6 +68,7 @@ class OfferFormPage(QWidget):
 
         self._set_info_message("", kind="")
         self._set_mode_title(is_edit=False)
+        self.input_url.setEnabled(True)
 
         self._last_dump_path = None
         self.btn_open_dump.setVisible(False)
@@ -79,6 +79,25 @@ class OfferFormPage(QWidget):
         self.btn_prefill_browser.setEnabled(self._has_playwright)
         # UX: auto-focus the title field
         self.input_title.setFocus()
+        self._snapshot = self._make_snapshot()
+
+    def open_for_create(self) -> None:
+        """Ouvre la page en mode création (formulaire vide)."""
+        self.reset_form()
+
+    def open_for_edit(self, offre_id: int) -> None:
+        """Ouvre la page en mode édition depuis l'id d'une offre."""
+        session = self._get_session()
+        if session is None:
+            self._set_info_message("Session DB introuvable (ApplicationView/MainWindow).", kind="error")
+            return
+
+        offre = session.get(Offre, offre_id)
+        if offre is None:
+            self._set_info_message(f"Offre introuvable (id={offre_id}).", kind="error")
+            return
+
+        self.load_offer(offre)
 
     def load_offer(self, offre: Offre) -> None:
         self.current_offer = offre
@@ -94,11 +113,14 @@ class OfferFormPage(QWidget):
         self.input_contract.setText(getattr(offre, "type_contrat", "") or "")
         self.text_description.setPlainText(getattr(offre, "texte_annonce", "") or "")
 
+        self.input_url.setEnabled(False)
+
         self._set_info_message("", kind="")
         self._set_mode_title(is_edit=True)
         self.btn_save.setText("Enregistrer")
+        self._snapshot = self._make_snapshot()
 
-    def set_prefill_data(self, data: Dict[str, Any]) -> None:
+    def set_prefill_data(self, data: dict[str, Any]) -> None:
         """Utilisé par MainWindow / ou directement par cette page après import URL."""
         # Ne force pas l'URL si l'utilisateur a déjà saisi une autre URL
         if not self.input_url.text().strip() and data.get("url"):
@@ -153,7 +175,7 @@ class OfferFormPage(QWidget):
         self.btn_open_dump = QPushButton("Ouvrir le dump")
         self.btn_open_dump.setObjectName("secondaryButton")
         self.btn_open_dump.setVisible(False)
-        self._last_dump_path: Optional[str] = None
+        self._last_dump_path: str | None = None
 
         # Form fields
         self.input_url = QLineEdit()
@@ -185,6 +207,7 @@ class OfferFormPage(QWidget):
 
         self.btn_prefill_browser = QPushButton("Pré-remplir (navigateur)")
         self.btn_prefill_browser.setObjectName("secondaryButton")
+
         # Playwright est optionnel: si absent, on désactive le bouton navigateur et on explique pourquoi.
         self._has_playwright = bool(getattr(url_import_service, "HAS_PLAYWRIGHT", False))
         if not self._has_playwright:
@@ -311,8 +334,32 @@ class OfferFormPage(QWidget):
         qurl = QUrl.fromLocalFile(self._last_dump_path)
         QDesktopServices.openUrl(qurl)
 
+    def _make_snapshot(self) -> dict[str, str]:
+        return {
+            "url": self.input_url.text().strip(),
+            "titre_poste": self.input_title.text().strip(),
+            "entreprise": self.input_company.text().strip(),
+            "localisation": self.input_location.text().strip(),
+            "type_contrat": self.input_contract.text().strip(),
+            "texte_annonce": self.text_description.toPlainText().strip(),
+        }
+
+    def _is_dirty(self) -> bool:
+        return self._make_snapshot() != (self._snapshot or {})
+
     def _on_back(self) -> None:
         """Return to offers list via ApplicationView."""
+        if self._is_dirty():
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Warning)
+            box.setWindowTitle("Modifications non enregistrées")
+            box.setText("Tu as des modifications non enregistrées.")
+            box.setInformativeText("Veux-tu quitter cette page sans enregistrer ?")
+            btn_leave = box.addButton("Quitter", QMessageBox.DestructiveRole)
+            box.addButton("Rester", QMessageBox.RejectRole)
+            box.exec()
+            if box.clickedButton() != btn_leave:
+                return
         parent = self.parent()
         show_offers = getattr(parent, "show_offers", None)
         if callable(show_offers):
@@ -457,8 +504,13 @@ class OfferFormPage(QWidget):
                 self.current_offer = offre
                 self._set_info_message("Offre créée.", kind="success")
                 self.saved.emit(offre)
-                # Reset for potential next creation
-                self.reset_form()
+                # Après création, on bascule en mode édition pour permettre l'ajustement immédiat.
+                self._set_mode_title(is_edit=True)
+                self.btn_save.setText("Enregistrer")
+                self.btn_prefill.setEnabled(False)
+                self.btn_prefill_browser.setEnabled(False)
+                self.input_url.setEnabled(False)
+                self._snapshot = self._make_snapshot()
             else:
                 offre = self.current_offer
                 # Update only if attributes exist
@@ -470,14 +522,16 @@ class OfferFormPage(QWidget):
                     offre.localisation = location
                 if hasattr(offre, "type_contrat"):
                     offre.type_contrat = contract
-                if hasattr(offre, "url"):
+                if hasattr(offre, "url") and self.input_url.isEnabled():
                     offre.url = url
                 if hasattr(offre, "texte_annonce"):
                     offre.texte_annonce = description
 
                 session.commit()
+                session.refresh(offre)
                 self._set_info_message("Modifications enregistrées.", kind="success")
                 self.saved.emit(offre)
+                self._snapshot = self._make_snapshot()
         except Exception as e:
             session.rollback()
             self._set_info_message(f"Erreur lors de l'enregistrement : {e}", kind="error")
@@ -541,7 +595,7 @@ class OfferFormPage(QWidget):
             QDesktopServices.openUrl(QUrl.fromLocalFile(dump_path))
 
 
-    def _get_session(self):
+    def _get_session(self) -> object | None:
         """Récupère la session SQLAlchemy en remontant la hiérarchie des parents.
 
         On cherche un attribut `.session` sur le parent, grand-parent, etc.

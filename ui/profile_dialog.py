@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
 
 
 class ProfileDialog(QDialog):
-    def __init__(self, profil=None, parent=None):
+    def __init__(self, profil: object | None = None, parent: QDialog | None = None) -> None:
         super().__init__(parent)
 
         self.setWindowTitle("Profil candidat")
@@ -72,7 +72,7 @@ class ProfileDialog(QDialog):
         layout.addLayout(form_layout)
         layout.addLayout(btn_layout)
 
-    def apply_to_model(self, profil):
+    def apply_to_model(self, profil: object) -> None:
         """Copie les valeurs des champs dans l'objet ProfilCandidat passé."""
         profil.nom = self.nom_input.text().strip()
         profil.prenom = self.prenom_input.text().strip()

@@ -10,10 +10,8 @@ Objectifs :
 Ce module ne dépend PAS de Qt.
 """
 
-from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -42,30 +40,30 @@ class ProfileData:
 class ProfileUpdateData:
     """Mise à jour partielle (None = ne pas changer)."""
 
-    prenom: Optional[str] = None
-    nom: Optional[str] = None
-    email: Optional[str] = None
-    telephone: Optional[str] = None
-    adresse: Optional[str] = None
-    ville: Optional[str] = None
-    code_postal: Optional[str] = None
-    pays: Optional[str] = None
-    linkedin: Optional[str] = None
-    github: Optional[str] = None
-    portfolio: Optional[str] = None
-    titre: Optional[str] = None
+    prenom: str | None = None
+    nom: str | None = None
+    email: str | None = None
+    telephone: str | None = None
+    adresse: str | None = None
+    ville: str | None = None
+    code_postal: str | None = None
+    pays: str | None = None
+    linkedin: str | None = None
+    github: str | None = None
+    portfolio: str | None = None
+    titre: str | None = None
 
 
 # -----------------------------------------------------------------------------
 # Queries
 # -----------------------------------------------------------------------------
 
-def get_profile(session: Session) -> Optional[ProfilCandidat]:
+def get_profile(session: Session) -> ProfilCandidat | None:
     """Retourne le profil candidat (single row), ou None si absent."""
     return session.query(ProfilCandidat).order_by(ProfilCandidat.id.asc()).first()
 
 
-def ensure_profile(session: Session, defaults: Optional[ProfileData] = None) -> ProfilCandidat:
+def ensure_profile(session: Session, defaults: ProfileData | None = None) -> ProfilCandidat:
     """Retourne un profil existant, ou le crée s'il n'existe pas."""
     profil = get_profile(session)
     if profil:

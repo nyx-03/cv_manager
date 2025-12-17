@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import os
 import sys
@@ -7,7 +6,6 @@ import tempfile
 import json
 import re
 from urllib.parse import urlparse, urlunparse
-from typing import Dict
 
 import requests
 from bs4 import BeautifulSoup
@@ -53,7 +51,7 @@ def _get_debug_dump_dir() -> Path:
     return base
 
 
-def _maybe_write_import_dump_txt(*, url: str, html: str, og_raw: Dict[str, str], jsonld_raw: list[str], data: Dict[str, str], soup: BeautifulSoup) -> Path | None:
+def _maybe_write_import_dump_txt(*, url: str, html: str, og_raw: dict[str, str], jsonld_raw: list[str], data: dict[str, str], soup: BeautifulSoup) -> Path | None:
     """Write a dump file only when debugging is enabled.
 
     Returns the dump path when created, otherwise None.
@@ -86,7 +84,7 @@ class UrlImportError(Exception):
 # Public API
 # ---------------------------------------------------------------------
 
-def import_offer_from_url(url: str) -> Dict[str, str]:
+def import_offer_from_url(url: str) -> dict[str, str]:
     """Importe une annonce depuis une URL (mode assisté).
 
     Retourne un dict compatible avec OfferFormDialog.set_prefill_data().
@@ -129,7 +127,7 @@ def import_offer_from_url(url: str) -> Dict[str, str]:
     return data
 
 
-def import_offer_from_url_browser(url: str) -> Dict[str, str]:
+def import_offer_from_url_browser(url: str) -> dict[str, str]:
     """Importe une annonce via un navigateur headless (Playwright).
 
     Utile quand `requests` récupère une page SEO/liste au lieu du détail (Jobup, sites JS, consentement, etc.).
@@ -154,14 +152,14 @@ def import_offer_from_url_browser(url: str) -> Dict[str, str]:
     return _parse_offer_html(html=html, url=url, final_url=final_url)
 
 
-def _parse_offer_html(*, html: str, url: str, final_url: str) -> Dict[str, str]:
+def _parse_offer_html(*, html: str, url: str, final_url: str) -> dict[str, str]:
     soup = BeautifulSoup(html, "html.parser")
 
     # Collecte brute (debug / amélioration du pré-remplissage)
     og_raw = _collect_opengraph_raw(soup)
     jsonld_raw = _collect_jsonld_raw(soup)
 
-    data: Dict[str, str] = {}
+    data: dict[str, str] = {}
     data["_has_jobposting"] = False
     data["_has_detail"] = False
 
@@ -324,7 +322,7 @@ def _fetch_html_playwright(url: str) -> tuple[str, str]:
 # Extractors
 # ---------------------------------------------------------------------
 
-def _extract_opengraph(soup: BeautifulSoup, data: Dict[str, str]) -> None:
+def _extract_opengraph(soup: BeautifulSoup, data: dict[str, str]) -> None:
     """Extrait quelques champs OpenGraph utiles."""
     og_map = {
         "og:title": "titre_poste",
@@ -341,7 +339,7 @@ def _extract_opengraph(soup: BeautifulSoup, data: Dict[str, str]) -> None:
                 data[key] = meta["content"].strip()
 
 
-def _extract_json_ld_jobposting(soup: BeautifulSoup, data: Dict[str, str]) -> None:
+def _extract_json_ld_jobposting(soup: BeautifulSoup, data: dict[str, str]) -> None:
     """Extrait un éventuel schema.org JobPosting depuis le JSON-LD."""
     scripts = soup.find_all("script", type="application/ld+json")
 
@@ -421,7 +419,7 @@ def _domain_is_jobup(source_site: str) -> bool:
     return host == "jobup.ch"
 
 
-def _extract_jobup_detail_from_page(soup: BeautifulSoup, data: Dict[str, str]) -> None:
+def _extract_jobup_detail_from_page(soup: BeautifulSoup, data: dict[str, str]) -> None:
     """Tente d'extraire le détail d'annonce Jobup depuis le HTML rendu.
 
     Problème rencontré: Jobup peut servir une page qui contient une liste + le détail,
@@ -573,7 +571,7 @@ def _extract_jobup_detail_from_page(soup: BeautifulSoup, data: Dict[str, str]) -
         data["_has_detail"] = True
 
 
-def _looks_like_listing_or_shell(soup: BeautifulSoup, data: Dict[str, str]) -> bool:
+def _looks_like_listing_or_shell(soup: BeautifulSoup, data: dict[str, str]) -> bool:
     """Heuristique: détecte une page qui n'est pas un détail d'annonce."""
     if data.get("_has_detail"):
         return False
@@ -652,9 +650,9 @@ def _extract_targeted_job_text(soup: BeautifulSoup) -> str:
     return best[:8000] if best else ""
 
 
-def _collect_opengraph_raw(soup: BeautifulSoup) -> Dict[str, str]:
+def _collect_opengraph_raw(soup: BeautifulSoup) -> dict[str, str]:
     """Récupère toutes les meta OpenGraph/Twitter utiles (brut)."""
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     for meta in soup.find_all("meta"):
         key = meta.get("property") or meta.get("name")
         val = meta.get("content")
@@ -677,7 +675,7 @@ def _collect_jsonld_raw(soup: BeautifulSoup) -> list[str]:
     return raws
 
 
-def _write_import_dump_txt(*, url: str, html: str, og_raw: Dict[str, str], jsonld_raw: list[str], data: Dict[str, str], soup: BeautifulSoup) -> Path | None:
+def _write_import_dump_txt(*, url: str, html: str, og_raw: dict[str, str], jsonld_raw: list[str], data: dict[str, str], soup: BeautifulSoup) -> Path | None:
     """Écrit un fichier .txt avec tout ce qu'on arrive à extraire.
 
     Objectif: diagnostiquer pourquoi le pré-remplissage n'est pas fidèle.

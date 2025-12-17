@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Services (métier) liés aux candidatures / lettres.
 
 Objectifs :
@@ -13,7 +11,6 @@ Ce module ne dépend PAS de Qt.
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -34,7 +31,7 @@ class CandidatureCreateData:
 
     offre_id: int
     statut: CandidatureStatut = CandidatureStatut.A_PREPARER
-    date_envoi: Optional[date] = None
+    date_envoi: date | None = None
     notes: str = ""
     chemin_lettre: str = ""
 
@@ -43,10 +40,10 @@ class CandidatureCreateData:
 class CandidatureUpdateData:
     """Champs modifiables d'une Candidature (None = ne pas changer)."""
 
-    statut: Optional[CandidatureStatut] = None
-    date_envoi: Optional[date] = None
-    notes: Optional[str] = None
-    chemin_lettre: Optional[str] = None
+    statut: CandidatureStatut | None = None
+    date_envoi: date | None = None
+    notes: str | None = None
+    chemin_lettre: str | None = None
 
 
 # -----------------------------------------------------------------------------
@@ -60,7 +57,7 @@ def list_for_offer(session: Session, offre_id: int, *, desc: bool = True) -> lis
     return q.all()
 
 
-def get_candidature(session: Session, cand_id: int) -> Optional[Candidature]:
+def get_candidature(session: Session, cand_id: int) -> Candidature | None:
     """Retourne une candidature par id, ou None."""
     return session.query(Candidature).filter_by(id=cand_id).first()
 
@@ -165,6 +162,7 @@ def _try_delete_file(path: str) -> bool:
     except Exception:
         return False
     return False
+
 
 def get_offer_stats(session: Session, offre_id: int) -> OfferCandidatureStats:
     """
