@@ -119,6 +119,7 @@ class OfferDetailPage(QWidget):
     - markSentRequested(candidature_id)
     - deleteRequested(candidature_id)
     - deleteOfferRequested(offer_id)
+    - editOfferRequested(offer_id)
     """
 
     backRequested = Signal()
@@ -126,6 +127,7 @@ class OfferDetailPage(QWidget):
     markSentRequested = Signal(int)
     deleteRequested = Signal(int)
     deleteOfferRequested = Signal(int)
+    editOfferRequested = Signal(int)
     saveDraftRequested = Signal(dict)   # payload: paragraph fields
     generateLetterRequested = Signal()
     # Nouveau (non-breaking): contient le nom du template sélectionné (ou "" pour défaut profil/app)
@@ -151,11 +153,19 @@ class OfferDetailPage(QWidget):
 
         header.addStretch(1)
 
+        self.btn_edit_offer = QPushButton("Modifier l’annonce")
+        self.btn_edit_offer.setObjectName("SecondaryButton")
+        self.btn_edit_offer.setToolTip("Modifier cette annonce")
+        self.btn_edit_offer.clicked.connect(self._on_edit_offer_clicked)
+        header.addWidget(self.btn_edit_offer)
+
         self.btn_delete_offer = QPushButton("Supprimer l’annonce")
         self.btn_delete_offer.setObjectName("DangerButton")
         self.btn_delete_offer.setToolTip("Supprimer cette annonce et ses candidatures associées")
         self.btn_delete_offer.clicked.connect(self._on_delete_offer_clicked)
         header.addWidget(self.btn_delete_offer)
+
+        self.btn_edit_offer.setEnabled(False)
 
         root.addLayout(header)
 
@@ -340,6 +350,9 @@ class OfferDetailPage(QWidget):
     def set_offer(self, offer: object) -> None:
         """Affiche une offre (sans DB)."""
         self.current_offer = offer
+        offer_id = getattr(offer, "id", None)
+        if hasattr(self, "btn_edit_offer"):
+            self.btn_edit_offer.setEnabled(offer_id is not None)
 
         titre = getattr(offer, "titre_poste", None) or getattr(offer, "titre", None) or ""
         ent = getattr(offer, "entreprise", None) or ""
@@ -409,6 +422,14 @@ class OfferDetailPage(QWidget):
             self.letters_layout.addWidget(card)
 
         self.letters_layout.addStretch(1)
+
+
+    def _on_edit_offer_clicked(self) -> None:
+        # UI only: on délègue l’édition réelle au contrôleur (ApplicationView/MainWindow)
+        offer_id = getattr(self.current_offer, "id", None)
+        if offer_id is None:
+            return
+        self.editOfferRequested.emit(int(offer_id))
 
     def _on_delete_offer_clicked(self) -> None:
         # UI only: on délègue la suppression réelle au contrôleur (MainWindow)

@@ -45,6 +45,7 @@ class ApplicationView(QWidget):
     - showCandidaturesRequested()
     - refreshRequested()
     - offerClicked(offre)
+    - editOfferRequested(offer_id)
     - backToOffersRequested()
     - openLetterRequested(candidature_id)
     - markSentRequested(candidature_id)
@@ -119,6 +120,50 @@ class ApplicationView(QWidget):
         self.set_page(PAGE_OFFERS)
 
     # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _on_edit_offer_requested(self, payload: object) -> None:
+        # payload peut être une Offre (liste) ou un id (détail)
+        if isinstance(payload, int):
+            self.show_edit_offer(payload)
+            return
+
+        offer_id = getattr(payload, "id", None)
+        if offer_id is None:
+            return
+        self.show_edit_offer(int(offer_id))
+
+    def _create_connections(self) -> None:
+        # Offers
+        self.offers_page.offerClicked.connect(self.offerClicked.emit)
+        if hasattr(self.offers_page, "offerEditRequested"):
+            self.offers_page.offerEditRequested.connect(self._on_edit_offer_requested)
+
+        # Detail page
+        self.offer_detail_page.backRequested.connect(self.show_offers)
+        self.offer_detail_page.openLetterRequested.connect(self.openLetterRequested.emit)
+        self.offer_detail_page.markSentRequested.connect(self.markSentRequested.emit)
+        self.offer_detail_page.deleteRequested.connect(self.deleteRequested.emit)
+        self.offer_detail_page.deleteOfferRequested.connect(self.deleteOfferRequested.emit)
+
+        # Edit offer from detail page
+        if hasattr(self.offer_detail_page, "editOfferRequested"):
+            self.offer_detail_page.editOfferRequested.connect(self._on_edit_offer_requested)
+
+        # Offer form page (add / edit)
+        self.offer_form_page.saved.connect(self._on_offer_saved)
+        self.offer_form_page.cancelled.connect(self._on_offer_cancelled)
+
+        # Sidebar
+        self.sidebar.navigateRequested.connect(self._handle_sidebar_nav)
+        self.sidebar.actionRequested.connect(self._handle_sidebar_action)
+
+        # Sync active state
+        self.stack.currentChanged.connect(self._sync_active_page)
+        self._sync_active_page(self.stack.currentIndex())
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
@@ -165,8 +210,8 @@ class ApplicationView(QWidget):
         self.offer_form_page.open_for_create()
         self.set_page(PAGE_ADD_OFFER)
 
-    def show_edit_offer(self, offre: Offre) -> None:
-        self.offer_form_page.open_for_edit(offre.id)
+    def show_edit_offer(self, offer_id: int) -> None:
+        self.offer_form_page.open_for_edit(int(offer_id))
         self.set_page(PAGE_ADD_OFFER)
 
     def show_offers(self) -> None:
@@ -179,31 +224,6 @@ class ApplicationView(QWidget):
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
-
-    def _create_connections(self) -> None:
-        # Offers
-        self.offers_page.offerClicked.connect(self.offerClicked.emit)
-        if hasattr(self.offers_page, "offerEditRequested"):
-            self.offers_page.offerEditRequested.connect(self.show_edit_offer)
-
-        # Detail page
-        self.offer_detail_page.backRequested.connect(self.show_offers)
-        self.offer_detail_page.openLetterRequested.connect(self.openLetterRequested.emit)
-        self.offer_detail_page.markSentRequested.connect(self.markSentRequested.emit)
-        self.offer_detail_page.deleteRequested.connect(self.deleteRequested.emit)
-        self.offer_detail_page.deleteOfferRequested.connect(self.deleteOfferRequested.emit)
-
-        # Offer form page (add / edit)
-        self.offer_form_page.saved.connect(self._on_offer_saved)
-        self.offer_form_page.cancelled.connect(self._on_offer_cancelled)
-
-        # Sidebar
-        self.sidebar.navigateRequested.connect(self._handle_sidebar_nav)
-        self.sidebar.actionRequested.connect(self._handle_sidebar_action)
-
-        # Sync active state
-        self.stack.currentChanged.connect(self._sync_active_page)
-        self._sync_active_page(self.stack.currentIndex())
 
     def _handle_sidebar_nav(self, page_name: str) -> None:
         mapping = {
